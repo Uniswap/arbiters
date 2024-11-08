@@ -1,66 +1,13 @@
-## Foundry
+# Arbiters
+Repository for developing and testing arbiters for [The Compact](https://github.com/Uniswap/the-compact).
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## Install & Usage
+Ensure that [Foundry](https://book.getfoundry.sh/getting-started/installation) and [Supersim](https://supersim.pages.dev/getting-started/installation) are both installed.
 
-Foundry consists of:
-
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
+To start Supersim and deploy The Compact (Version 0) to each chain, run:
+```sh
+$ ./bootstrap.sh
 ```
 
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+## Adding an Arbiter
+Arbiter implementations should be placed into `src/[project]/arbiter/[name].sol` for the main arbiter interfacing with The Compact on the origin chain, `src/[project]/*/*.sol` for any ancillary contracts on the destination chain as well as project-specific bridge contracts, gateways, or other facilities. Then, associated deployments + tests should be structured as scripts so they can be incorporated into the Supersim test framework.
