@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+remappings = [
+    "ds-test/=lib/the-compact/lib/permit2/lib/forge-std/lib/ds-test/src/",
+    "forge-gas-snapshot/=lib/the-compact/lib/permit2/lib/forge-gas-snapshot/src/",
+    "forge-std/=lib/the-compact/lib/forge-std/src/",
+    "openzeppelin-contracts/=lib/the-compact/lib/permit2/lib/openzeppelin-contracts/",
+    "permit2/=lib/the-compact/lib/permit2/",
+    "solady/=lib/the-compact/lib/solady/src/",
+    "soledge/=lib/the-compact/lib/soledge/src/",
+    "solmate/=lib/the-compact/lib/permit2/lib/solmate/",
+    "the-compact/=lib/the-compact/",
+    "tstorish/=lib/the-compact/lib/tstorish/src/",
+]
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
