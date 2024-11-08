@@ -12,13 +12,13 @@ $ ./bootstrap.sh
 ## Adding an Arbiter
 Arbiter implementations should be placed into `src/[project]/arbiter/[name].sol` for the main arbiter interfacing with The Compact on the origin chain, `src/[project]/*/*.sol` for any ancillary contracts on the destination chain as well as project-specific bridge contracts, gateways, or other facilities. Then, associated deployments + tests should be structured as scripts so they can be incorporated into the Supersim test framework.
 
-### Where to Start?
+## Where to Start?
 Arbiters are tasked with processing claims against The Compact, and interact with it via the [Claims Interface](https://github.com/Uniswap/the-compact/blob/main/src/interfaces/ITheCompactClaims.sol#L56). The arbiter selects a claim method based on the type of Compact message signed by the sponsor and allocator and on the desired settlement behavior. To finalize a claim, _some_ actor must call into the arbiter, which will act on the input and translate it into their preferred claim method. The arbiter then must call the derived claim method on The Compact to finalize the claim process.
 
 > There is also a [Core Interface](https://github.com/Uniswap/the-compact/blob/main/src/interfaces/ITheCompact.sol#L14) that depositors and allocators interact with, but this can be safely disregarded by arbiters (though some view functions may be useful depending on the context). Also note that The Compact will provide high-level safety guarantees around signatures, nonces, and expirations, which leaves arbiters free to focus on the safety guarantees around their respective cross-chain message protocol and other internal logic.
 
 The claims interface exposes 96 endpoints, each of which takes a single struct argument. Most arbiters will select a struct that works for what they need, enabling them to disregard the other endpoints. A good starting choice for many varieties of arbiter would be the `ClaimWithWitness` struct:
-```
+```solidity
 struct ClaimWithWitness {
     bytes allocatorSignature; // Authorization from the allocator.
     bytes sponsorSignature; // Authorization from the sponsor.
