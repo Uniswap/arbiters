@@ -54,6 +54,7 @@ interface ITheCompactClaims {
     function claim(ClaimWithWitness calldata claimPayload) external returns (bool);
     function claimAndWithdraw(ClaimWithWitness calldata claimPayload) external returns (bool);
     // ...
+}
 ```
 
 If multiple recipients are needed, the arbiter should utilize a `SplitClaimWithWitness` input argument; if multiple resource locks on a single chain are being claimed at once, a `BatchClaimWithWitness` should be used instead. See  [Section 4](https://github.com/Uniswap/the-compact/blob/main/README.md#4-submit-a-claim) of the README for a more detailed breakdown on advanced use-cases like qualified claims or multichain claims. Bear in mind that arbiters targeting cross-chain swaps should implement [EIP-7683](https://eips.ethereum.org/EIPS/eip-7683) if feasible or incorporate accompanying standards if their requirements differ from what EIP-7683 supports.
