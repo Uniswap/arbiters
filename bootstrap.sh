@@ -42,13 +42,17 @@ sleep 1
 # Deploy Permit2 and The Compact to chain one
 chain_one_batch() {
     {
-        cast send --unlocked --from "$DEFAULT_ACCOUNT" "$PERMIT2_FACTORY_DEPLOYER" --value "$TEN_ETH" --rpc-url "$CHAIN_ONE_RPC"
+        cast send --unlocked --from "$DEFAULT_DEPLOYER" "$PERMIT2_FACTORY_DEPLOYER" --value "$TEN_ETH" --rpc-url "$CHAIN_ONE_RPC"
         cast rpc anvil_impersonateAccount "$PERMIT2_FACTORY_DEPLOYER" --rpc-url "$CHAIN_ONE_RPC"
         cast send --unlocked --from "$PERMIT2_FACTORY_DEPLOYER" "$PERMIT2_FACTORY_ADDRESS" "$PERMIT2_CREATION_CODE" --rpc-url "$CHAIN_ONE_RPC"
         cast rpc anvil_stopImpersonatingAccount "$PERMIT2_FACTORY_DEPLOYER" --rpc-url "$CHAIN_ONE_RPC"
 
         cast rpc anvil_setCode "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$IMMUTABLE_CREATE2_FACTORY_CODE" --rpc-url "$CHAIN_ONE_RPC"
-        cast send --unlocked --from "$DEFAULT_ACCOUNT" "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$THE_COMPACT_CREATION_CALLDATA" --rpc-url "$CHAIN_ONE_RPC"
+        cast send --unlocked --from "$DEFAULT_DEPLOYER" "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$THE_COMPACT_CREATION_CALLDATA" --rpc-url "$CHAIN_ONE_RPC"
+        cast rpc anvil_setCode "$DEFAULT_SPONSOR" "$ALWAYS_VALID_1271_CODE" --rpc-url "$CHAIN_ONE_RPC"
+        cast rpc anvil_setCode "$DEFAULT_ALLOCATOR" "$ALWAYS_VALID_1271_CODE" --rpc-url "$CHAIN_ONE_RPC"
+        cast send --unlocked --from "$DEFAULT_DEPLOYER" "$THE_COMPACT_ADDRESS" "$REGISTER_DEFAULT_ALLOCATOR_CALLDATA" --rpc-url "$CHAIN_ONE_RPC"
+        cast send --unlocked --from "$DEFAULT_SPONSOR" --value "$TEN_ETH" "$THE_COMPACT_ADDRESS" "$DEPOSIT_USING_DEFAULT_ALLOCATOR_CALLDATA" --rpc-url "$CHAIN_ONE_RPC"
     } &>/dev/null
 }
 
@@ -56,7 +60,11 @@ chain_one_batch() {
 chain_two_batch() {
     {
         cast rpc anvil_setCode "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$IMMUTABLE_CREATE2_FACTORY_CODE" --rpc-url "$CHAIN_TWO_RPC"
-        cast send --unlocked --from "$DEFAULT_ACCOUNT" "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$THE_COMPACT_CREATION_CALLDATA" --rpc-url "$CHAIN_TWO_RPC"
+        cast send --unlocked --from "$DEFAULT_DEPLOYER" "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$THE_COMPACT_CREATION_CALLDATA" --rpc-url "$CHAIN_TWO_RPC"
+        cast rpc anvil_setCode "$DEFAULT_SPONSOR" "$ALWAYS_VALID_1271_CODE" --rpc-url "$CHAIN_TWO_RPC"
+        cast rpc anvil_setCode "$DEFAULT_ALLOCATOR" "$ALWAYS_VALID_1271_CODE" --rpc-url "$CHAIN_TWO_RPC"
+        cast send --unlocked --from "$DEFAULT_DEPLOYER" "$THE_COMPACT_ADDRESS" "$REGISTER_DEFAULT_ALLOCATOR_CALLDATA" --rpc-url "$CHAIN_TWO_RPC"
+        cast send --unlocked --from "$DEFAULT_SPONSOR" --value "$TEN_ETH" "$THE_COMPACT_ADDRESS" "$DEPOSIT_USING_DEFAULT_ALLOCATOR_CALLDATA" --rpc-url "$CHAIN_TWO_RPC"
     } &>/dev/null
 }
 
@@ -64,7 +72,11 @@ chain_two_batch() {
 chain_three_batch() {
     {
         cast rpc anvil_setCode "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$IMMUTABLE_CREATE2_FACTORY_CODE" --rpc-url "$CHAIN_THREE_RPC"
-        cast send --unlocked --from "$DEFAULT_ACCOUNT" "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$THE_COMPACT_CREATION_CALLDATA" --rpc-url "$CHAIN_THREE_RPC"
+        cast send --unlocked --from "$DEFAULT_DEPLOYER" "$IMMUTABLE_CREATE2_FACTORY_ADDRESS" "$THE_COMPACT_CREATION_CALLDATA" --rpc-url "$CHAIN_THREE_RPC"
+        cast rpc anvil_setCode "$DEFAULT_SPONSOR" "$ALWAYS_VALID_1271_CODE" --rpc-url "$CHAIN_THREE_RPC"
+        cast rpc anvil_setCode "$DEFAULT_ALLOCATOR" "$ALWAYS_VALID_1271_CODE" --rpc-url "$CHAIN_THREE_RPC"
+        cast send --unlocked --from "$DEFAULT_DEPLOYER" "$THE_COMPACT_ADDRESS" "$REGISTER_DEFAULT_ALLOCATOR_CALLDATA" --rpc-url "$CHAIN_THREE_RPC"
+        cast send --unlocked --from "$DEFAULT_SPONSOR" --value "$TEN_ETH" "$THE_COMPACT_ADDRESS" "$DEPOSIT_USING_DEFAULT_ALLOCATOR_CALLDATA" --rpc-url "$CHAIN_THREE_RPC"
     } &>/dev/null
 }
 
