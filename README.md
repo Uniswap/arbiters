@@ -1,5 +1,5 @@
 # Arbiters
-Repository for developing and testing arbiters for [The Compact](https://github.com/Uniswap/the-compact).
+Repository for developing and testing arbiters and associated standards for [The Compact](https://github.com/Uniswap/the-compact).
 
 ## Install & Usage
 Ensure that [Foundry](https://book.getfoundry.sh/getting-started/installation) and [Supersim](https://supersim.pages.dev/getting-started/installation) are both installed.
@@ -47,4 +47,14 @@ To summarize the relevant components:
  - the minimum output amount
  - the recipient address on the destination chain
 
-If multiple recipients are needed, the arbiter should utilize a `SplitClaimWithWitness` input argument; if multiple resource locks on a single chain are being claimed at once, a `BatchClaimWithWitness` should be used instead. See  [Section 4](https://github.com/Uniswap/the-compact/blob/main/README.md#4-submit-a-claim) of the README for a more detailed breakdown on advanced use-cases like qualified claims or multichain claims.
+The arbiter in this example would call one of these two endpoints on The Compact depending on whether the claimant should be receiving wrapped tokens or unwrapped equivalents:
+```solidity
+interface ITheCompactClaims {
+    // ...
+    function claim(ClaimWithWitness calldata claimPayload) external returns (bool);
+    function claimAndWithdraw(ClaimWithWitness calldata claimPayload) external returns (bool);
+    // ...
+```
+
+If multiple recipients are needed, the arbiter should utilize a `SplitClaimWithWitness` input argument; if multiple resource locks on a single chain are being claimed at once, a `BatchClaimWithWitness` should be used instead. See  [Section 4](https://github.com/Uniswap/the-compact/blob/main/README.md#4-submit-a-claim) of the README for a more detailed breakdown on advanced use-cases like qualified claims or multichain claims. Bear in mind that arbiters targeting cross-chain swaps should implement [EIP-7683](https://eips.ethereum.org/EIPS/eip-7683) if feasible or incorporate accompanying standards if their requirements differ from what EIP-7683 supports.
+
