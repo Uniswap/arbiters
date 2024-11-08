@@ -1,18 +1,7 @@
 # Arbiters
 Repository for developing and testing arbiters and associated standards for [The Compact](https://github.com/Uniswap/the-compact).
 
-## Install & Usage
-Ensure that [Foundry](https://book.getfoundry.sh/getting-started/installation) and [Supersim](https://supersim.pages.dev/getting-started/installation) are both installed.
-
-To start Supersim and deploy The Compact (Version 0) to each chain, run:
-```sh
-$ ./bootstrap.sh
-```
-
-## Adding an Arbiter
-Arbiter implementations should be placed into `src/[project]/arbiter/[name].sol` for the main arbiter interfacing with The Compact on the origin chain, `src/[project]/*/*.sol` for any ancillary contracts on the destination chain as well as project-specific bridge contracts, gateways, or other facilities. Then, associated deployments + tests should be structured as scripts so they can be incorporated into the Supersim test framework.
-
-## Where to Start?
+## Overview
 Arbiters are tasked with processing claims against The Compact, and interact with it via the [Claims Interface](https://github.com/Uniswap/the-compact/blob/main/src/interfaces/ITheCompactClaims.sol#L56). The arbiter selects a claim method based on the type of Compact message signed by the sponsor and allocator and on the desired settlement behavior. To finalize a claim, _some_ actor must call into the arbiter, which will act on the input and translate it into their preferred claim method. The arbiter then must call the derived claim method on The Compact to finalize the claim process.
 
 > There is also a [Core Interface](https://github.com/Uniswap/the-compact/blob/main/src/interfaces/ITheCompact.sol#L14) that depositors and allocators interact with, but this can be safely disregarded by arbiters (though some view functions may be useful depending on the context). Also note that The Compact will provide high-level safety guarantees around signatures, nonces, and expirations, which leaves arbiters free to focus on the safety guarantees around their respective cross-chain message protocol and other internal logic.
@@ -59,3 +48,13 @@ interface ITheCompactClaims {
 
 If multiple recipients are needed, the arbiter should utilize a `SplitClaimWithWitness` input argument; if multiple resource locks on a single chain are being claimed at once, a `BatchClaimWithWitness` should be used instead. See  [Section 4](https://github.com/Uniswap/the-compact/blob/main/README.md#4-submit-a-claim) of the README for a more detailed breakdown on advanced use-cases like qualified claims or multichain claims. Bear in mind that arbiters targeting cross-chain swaps should implement [EIP-7683](https://eips.ethereum.org/EIPS/eip-7683) if feasible or incorporate accompanying standards if their requirements differ from what EIP-7683 supports.
 
+## Install & Usage
+Ensure that [Foundry](https://book.getfoundry.sh/getting-started/installation) and [Supersim](https://supersim.pages.dev/getting-started/installation) are both installed.
+
+To start Supersim and deploy The Compact (Version 0) to each chain, run:
+```sh
+$ ./bootstrap.sh
+```
+
+## Adding an Arbiter
+Arbiter implementations should be placed into `src/[project]/arbiter/[name].sol` for the main arbiter interfacing with The Compact on the origin chain, `src/[project]/*/*.sol` for any ancillary contracts on the destination chain as well as project-specific bridge contracts, gateways, or other facilities. Then, associated deployments + tests should be structured as scripts so they can be incorporated into the Supersim test framework.
