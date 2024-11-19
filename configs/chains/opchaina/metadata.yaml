@@ -1,7 +1,0 @@
-chainId: 901
-domainId: 901
-name: opchaina
-displayName: OPChainA
-protocol: ethereum
-rpcUrls:
-  - http: http://127.0.0.1:9545

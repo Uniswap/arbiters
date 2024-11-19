@@ -1,7 +1,0 @@
-chainId: 900
-domainId: 900
-name: l1
-displayName: L1
-protocol: ethereum
-rpcUrls:
-  - http: http://127.0.0.1:8545

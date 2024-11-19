@@ -12,8 +12,4 @@ docs/
 
 # Dotenv file
 .env
-
 node_modules
-
-# hyperlane deployment artifacts
-configs/chains/*/addresses.yaml
