@@ -1,6 +1,8 @@
 [profile.default]
 src = "src"
 out = "out"
+evm_version = "cancun"
+via_ir = true
 libs = ["lib"]
 remappings = [
     "ds-test/=lib/the-compact/lib/permit2/lib/forge-std/lib/ds-test/src/",
