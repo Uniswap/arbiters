@@ -34,7 +34,7 @@ contract HyperlaneArbiterTest is TheCompactTest {
 
     function test_hyperlane_claimWithWitness() public {
         hyperlane_setup();
-            
+
         ResetPeriod resetPeriod = ResetPeriod.TenMinutes;
         Scope scope = Scope.Multichain;
         uint256 amount = 1e18;
@@ -47,13 +47,14 @@ contract HyperlaneArbiterTest is TheCompactTest {
         theCompact.__registerAllocator(allocator, "");
 
         vm.prank(swapper);
-        uint256 id = theCompact.deposit{ value: amount }(allocator, resetPeriod, scope, swapper);
+        uint256 id = theCompact.deposit{value: amount}(allocator, resetPeriod, scope, swapper);
         assertEq(theCompact.balanceOf(swapper, id), amount);
 
         uint256 fee = amount - 1;
         uint32 chainId = destination;
 
-        string memory witnessTypestring = "Intent intent)Intent(uint256 fee,uint32 chainId,address recipient,address token,uint256 amount)";
+        string memory witnessTypestring =
+            "Intent intent)Intent(uint256 fee,uint32 chainId,address recipient,address token,uint256 amount)";
 
         Intent memory intent = Intent(fee, chainId, address(token), swapper, amount);
 
@@ -73,7 +74,9 @@ contract HyperlaneArbiterTest is TheCompactTest {
 
         bytes32 claimHash = keccak256(
             abi.encode(
-                keccak256("Compact(address arbiter,address sponsor,uint256 nonce,uint256 expires,uint256 id,uint256 amount,Intent intent)Intent(uint256 fee,uint32 chainId,address recipient,address token,uint256 amount)"),
+                keccak256(
+                    "Compact(address arbiter,address sponsor,uint256 nonce,uint256 expires,uint256 id,uint256 amount,Intent intent)Intent(uint256 fee,uint32 chainId,address recipient,address token,uint256 amount)"
+                ),
                 arbiter,
                 swapper,
                 nonce,
@@ -92,7 +95,19 @@ contract HyperlaneArbiterTest is TheCompactTest {
         (r, vs) = vm.signCompact(allocatorPrivateKey, digest);
         bytes memory allocatorSignature = abi.encodePacked(r, vs);
 
-        ClaimWithWitness memory claim = ClaimWithWitness(allocatorSignature, sponsorSignature, swapper, nonce, expires, witness, witnessTypestring, id, amount, claimant, fee);
+        ClaimWithWitness memory claim = ClaimWithWitness(
+            allocatorSignature,
+            sponsorSignature,
+            swapper,
+            nonce,
+            expires,
+            witness,
+            witnessTypestring,
+            id,
+            amount,
+            claimant,
+            fee
+        );
 
         originArbiter.claim(claim);
 
