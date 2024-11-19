@@ -108,6 +108,37 @@ echo "All contract deployments completed."
 #  - deploy an AlwaysOKSponsor and deposit some tokens using AlwaysOKAllocator to it
 
 ## NOTE: this is where arbiter deployments and test scripts will go!
+hyperlane() {
+    # anvil account (derives to to $DEFAULT_DEPLOYER address)
+    export HYP_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+    export LOG_LEVEL=debug
+
+    npx hyperlane core deploy --skip-confirmation --config ./configs/core-config.yaml --registry ./configs --overrides "" --chain l1
+    MAILBOX_ONE=$(cat ./configs/chains/l1/addresses.yaml | yq '.mailbox')
+    DOMAIN_ONE=$(cat ./configs/chains/l1/metadata.yaml | yq '.domainId')
+    ARBITER_ONE=$(forge create HyperlaneArbiter --rpc-url $CHAIN_ONE_RPC --from $DEFAULT_DEPLOYER --unlocked --constructor-args $MAILBOX_ONE $THE_COMPACT_ADDRESS --json | jq '.deployedTo')
+
+    npx hyperlane core deploy --skip-confirmation --config ./configs/core-config.yaml --registry ./configs --overrides "" --chain opchaina
+    MAILBOX_TWO=$(cat ./configs/chains/opchaina/addresses.yaml | yq '.mailbox')
+    DOMAIN_TWO=$(cat ./configs/chains/opchaina/metadata.yaml | yq '.domainId')
+    ARBITER_TWO=$(forge create HyperlaneArbiter --rpc-url $CHAIN_TWO_RPC --from $DEFAULT_DEPLOYER --unlocked --constructor-args $MAILBOX_TWO $THE_COMPACT_ADDRESS --json | jq '.deployedTo')
+
+    npx hyperlane core deploy --skip-confirmation --config ./configs/core-config.yaml --registry ./configs --overrides "" --chain opchainb
+    MAILBOX_THREE=$(cat ./configs/chains/opchainb/addresses.yaml | yq '.mailbox')
+    DOMAIN_THREE=$(cat ./configs/chains/opchainb/metadata.yaml | yq '.domainId')
+    ARBITER_THREE=$(forge create HyperlaneArbiter --rpc-url $CHAIN_THREE_RPC --from $DEFAULT_DEPLOYER --unlocked --constructor-args $MAILBOX_TWO $THE_COMPACT_ADDRESS --json | jq '.deployedTo')
+
+    cast send --unlocked --from $DEFAULT_DEPLOYER --rpc-url $CHAIN_ONE_RPC $ARBITER_ONE "enrollRemoteRouter(uint32,bytes32)" $DOMAIN_TWO $ARBITER_TWO
+    cast send --unlocked --from $DEFAULT_DEPLOYER --rpc-url $CHAIN_ONE_RPC $ARBITER_ONE "enrollRemoteRouter(uint32,bytes32)" $DOMAIN_THREE $ARBITER_THREE
+
+    cast send --unlocked --from $DEFAULT_DEPLOYER --rpc-url $CHAIN_ONE_RPC $ARBITER_TWO "enrollRemoteRouter(uint32,bytes32)" $DOMAIN_ONE $ARBITER_ONE
+    cast send --unlocked --from $DEFAULT_DEPLOYER --rpc-url $CHAIN_ONE_RPC $ARBITER_TWO "enrollRemoteRouter(uint32,bytes32)" $DOMAIN_THREE $ARBITER_THREE
+
+    cast send --unlocked --from $DEFAULT_DEPLOYER --rpc-url $CHAIN_ONE_RPC $ARBITER_THREE "enrollRemoteRouter(uint32,bytes32)" $DOMAIN_ONE $ARBITER_ONE
+    cast send --unlocked --from $DEFAULT_DEPLOYER --rpc-url $CHAIN_ONE_RPC $ARBITER_THREE "enrollRemoteRouter(uint32,bytes32)" $DOMAIN_TWO $ARBITER_TWO
+}
+
+hyperlane
 
 # Wait a moment before switching over to supersim screen
 sleep 0.1
