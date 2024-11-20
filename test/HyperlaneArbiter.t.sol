@@ -1,7 +1,7 @@
 pragma solidity ^0.8.0;
 
 import "the-compact/test/TheCompact.t.sol";
-import "../src/HyperlaneArbiter.sol";
+import {HyperlaneArbiter, Intent, WITNESS_TYPESTRING} from "../src/HyperlaneArbiter.sol";
 
 import {MockMailbox} from "hyperlane/contracts/mock/MockMailbox.sol";
 import {TypeCasts} from "hyperlane/contracts/libs/TypeCasts.sol";
@@ -9,7 +9,7 @@ import {TypeCasts} from "hyperlane/contracts/libs/TypeCasts.sol";
 contract HyperlaneArbiterTest is TheCompactTest {
     using TypeCasts for address;
 
-    uint32 origin = 1;
+    uint32 origin = uint32(block.chainid); // match the compact chain id
     uint32 destination = 2;
 
     MockMailbox originMailbox;
@@ -53,29 +53,15 @@ contract HyperlaneArbiterTest is TheCompactTest {
         uint256 fee = amount - 1;
         uint32 chainId = destination;
 
-        string memory witnessTypestring =
-            "Intent intent)Intent(uint256 fee,uint32 chainId,address recipient,address token,uint256 amount)";
-
         Intent memory intent = Intent(fee, chainId, address(token), swapper, amount);
-
-        vm.chainId(destination);
-
-        token.mint(claimant, amount);
-
-        vm.startPrank(claimant);
-        // TODO: permit2 approvals
-        token.approve(address(destinationArbiter), amount);
-        destinationArbiter.fill(origin, intent);
-        vm.stopPrank();
-
-        originMailbox.processNextInboundMessage();
+        Compact memory compact = Compact(arbiter, swapper, nonce, expires, id, amount);
 
         bytes32 witness = originArbiter.hash(intent);
 
         bytes32 claimHash = keccak256(
             abi.encode(
                 keccak256(
-                    "Compact(address arbiter,address sponsor,uint256 nonce,uint256 expires,uint256 id,uint256 amount,Intent intent)Intent(uint256 fee,uint32 chainId,address recipient,address token,uint256 amount)"
+                    "Compact(address arbiter,address sponsor,uint256 nonce,uint256 expires,uint256 id,uint256 amount,Intent intent)Intent(uint256 fee,uint32 chainId,address token,address recipient,uint256 amount)"
                 ),
                 arbiter,
                 swapper,
@@ -95,21 +81,17 @@ contract HyperlaneArbiterTest is TheCompactTest {
         (r, vs) = vm.signCompact(allocatorPrivateKey, digest);
         bytes memory allocatorSignature = abi.encodePacked(r, vs);
 
-        ClaimWithWitness memory claim = ClaimWithWitness(
-            allocatorSignature,
-            sponsorSignature,
-            swapper,
-            nonce,
-            expires,
-            witness,
-            witnessTypestring,
-            id,
-            amount,
-            claimant,
-            fee
-        );
+        vm.chainId(destination);
+        token.mint(claimant, amount);
 
-        originArbiter.claim(claim);
+        vm.startPrank(claimant);
+        // TODO: permit2 approvals
+        token.approve(address(destinationArbiter), amount);
+        destinationArbiter.fill(origin, compact, intent, allocatorSignature, sponsorSignature);
+        vm.stopPrank();
+
+        vm.chainId(origin);
+        originMailbox.processNextInboundMessage();
 
         assertEq(address(theCompact).balance, amount);
         assertEq(claimant.balance, 0);
