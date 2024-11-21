@@ -1,0 +1,12 @@
+{
+  "name": "arbiters",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:uniswap/arbiters.git",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@hyperlane-xyz/core": "^5.8.0"
+  },
+  "packageManager": "yarn@4.5.1"
+}
