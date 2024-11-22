@@ -129,6 +129,10 @@ contract HyperlaneArbiter is Router {
             keccak256(abi.encode(TYPEHASH, intent.fee, intent.chainId, intent.token, intent.recipient, intent.amount));
     }
 
+    function getCompactWitnessTypestring() external pure returns (string memory) {
+        return WITNESS_TYPESTRING;
+    }
+
     function _handle(
         uint32,
         /*origin*/
