@@ -14,7 +14,6 @@ contract HyperlaneSignIntent is Script {
     address arbiter;
     address allocator;
     address sponsor;
-    address claimant;
     bytes32 domainSeparator;
 
     uint256 sponsorPrivateKey;
@@ -35,7 +34,6 @@ contract HyperlaneSignIntent is Script {
         allocatorPrivateKey = vm.envUint("ALLOCATOR_PRIVATE_KEY");
 
         // destination fill interface
-        claimant = vm.envAddress("DEFAULT_CLAIMANT");
         address _destinationArbiter = vm.envAddress("ARBITER_TWO");
         destination = uint32(vm.envUint("DOMAIN_TWO"));
         destinationArbiter = HyperlaneArbiter(_destinationArbiter);

@@ -107,15 +107,17 @@ contract HyperlaneArbiter is Router {
 
         // TODO: support Permit2 fills
         address filler = msg.sender;
+        uint256 hyperlaneFee = msg.value;
         if (intent.token == address(0)) {
             Address.sendValue(payable(intent.recipient), intent.amount);
+            hyperlaneFee -= intent.amount;
         } else {
             intent.token.safeTransferFrom(filler, intent.recipient, intent.amount);
         }
 
         _Router_dispatch(
             claimChain,
-            msg.value - intent.amount,
+            hyperlaneFee,
             Message.encode(compact, allocatorSignature, sponsorSignature, hash(intent), intent.fee, filler),
             "",
             address(hook)
