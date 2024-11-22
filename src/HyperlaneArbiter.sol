@@ -5,6 +5,7 @@ import {TheCompact} from "the-compact/src/TheCompact.sol";
 import {ClaimWithWitness} from "the-compact/src/types/Claims.sol";
 import {Compact} from "the-compact/src/types/EIP712Types.sol";
 
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {Router} from "hyperlane/contracts/client/Router.sol";
 
@@ -106,10 +107,18 @@ contract HyperlaneArbiter is Router {
 
         // TODO: support Permit2 fills
         address filler = msg.sender;
-        intent.token.safeTransferFrom(filler, intent.recipient, intent.amount);
+        if (intent.token == address(0)) {
+            Address.sendValue(payable(intent.recipient), intent.amount);
+        } else {
+            intent.token.safeTransferFrom(filler, intent.recipient, intent.amount);
+        }
 
-        _dispatch(
-            claimChain, Message.encode(compact, allocatorSignature, sponsorSignature, hash(intent), intent.fee, filler)
+        _Router_dispatch(
+            claimChain,
+            msg.value - intent.amount,
+            Message.encode(compact, allocatorSignature, sponsorSignature, hash(intent), intent.fee, filler),
+            "",
+            address(hook)
         );
     }
 
