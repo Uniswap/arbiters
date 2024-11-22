@@ -8,5 +8,11 @@
   "dependencies": {
     "@hyperlane-xyz/core": "^5.8.0"
   },
-  "packageManager": "yarn@4.5.1"
+  "scripts": {
+    "leftpad": "node -e \"console.log('0x' + '0'.repeat(32*2 - (process.argv[1].slice(2).length)) + process.argv[1].slice(2))\""
+  },
+  "packageManager": "yarn@4.5.1",
+  "devDependencies": {
+    "@hyperlane-xyz/cli": "^7.1.0"
+  }
 }
