@@ -159,7 +159,15 @@ contract HyperlaneArbiter is Router {
             keccak256(abi.encode(TYPEHASH, intent.fee, intent.chainId, intent.token, intent.recipient, intent.amount));
     }
 
-    function getCompactWitnessDetails() external pure returns (string memory typestring, string[] memory compactTokenArguments, string[3][] memory customTokenArguments) {
+    function getCompactWitnessDetails()
+        external
+        pure
+        returns (
+            string memory typestring,
+            string[] memory compactTokenArguments,
+            string[3][] memory customTokenArguments
+        )
+    {
         typestring = WITNESS_TYPESTRING;
 
         // Arguments that refer to some amount of the token in the resource lock
