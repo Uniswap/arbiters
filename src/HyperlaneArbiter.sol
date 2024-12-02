@@ -105,6 +105,8 @@ contract HyperlaneArbiter is Router {
     ) external payable {
         require(block.chainid == intent.chainId, "invalid chain");
 
+        require(allocatorSignature.length == 64 && sponsorSignature.length == 64, "invalid signature length");
+
         // TODO: support Permit2 fills
         address filler = msg.sender;
         uint256 hyperlaneFee = msg.value;
