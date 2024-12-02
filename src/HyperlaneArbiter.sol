@@ -105,6 +105,8 @@ contract HyperlaneArbiter is Router {
     ) external payable {
         require(block.chainid == intent.chainId, "invalid chain");
 
+        require(allocatorSignature.length == 64 && sponsorSignature.length == 64, "invalid signature length");
+
         // TODO: support Permit2 fills
         address filler = msg.sender;
         uint256 hyperlaneFee = msg.value;
@@ -124,13 +126,59 @@ contract HyperlaneArbiter is Router {
         );
     }
 
+    /**
+     * @notice Quotes a compact intent and returns the msg.value that should be provided
+     * cover all hyperlane fees (relay, etc).
+     * @param claimChain The chain ID of the claim.
+     * @param compact The compact intent to fill.
+     * @dev signatures must be compliant with https://eips.ethereum.org/EIPS/eip-2098
+     * @param allocatorSignature The allocator's signature.
+     * @param sponsorSignature The sponsor's signature.
+     * @return The quoted fee.
+     */
+    function quote(
+        uint32 claimChain,
+        Compact calldata compact,
+        Intent calldata intent,
+        bytes calldata allocatorSignature,
+        bytes calldata sponsorSignature
+    ) external view returns (uint256) {
+        require(block.chainid == intent.chainId, "invalid chain");
+
+        // TODO: support Permit2 fills
+        address filler = msg.sender;
+
+        return _Router_quoteDispatch(
+            claimChain,
+            Message.encode(compact, allocatorSignature, sponsorSignature, hash(intent), intent.fee, filler),
+            "",
+            address(hook)
+        );
+    }
+
     function hash(Intent memory intent) public pure returns (bytes32) {
         return
             keccak256(abi.encode(TYPEHASH, intent.fee, intent.chainId, intent.token, intent.recipient, intent.amount));
     }
 
-    function getCompactWitnessTypestring() external pure returns (string memory) {
-        return WITNESS_TYPESTRING;
+    function getCompactWitnessDetails()
+        external
+        pure
+        returns (
+            string memory typestring,
+            string[] memory compactTokenArguments,
+            string[3][] memory customTokenArguments
+        )
+    {
+        typestring = WITNESS_TYPESTRING;
+
+        // Arguments that refer to some amount of the token in the resource lock
+        compactTokenArguments = new string[](1);
+        compactTokenArguments[0] = "fee";
+
+        // Arguments that refer to some amount of an arbitrary chain + token combination
+        customTokenArguments = new string[3][](1);
+        customTokenArguments[0] = ["intent.chainId", "intent.token", "intent.amount"];
     }
 
     function _handle(
