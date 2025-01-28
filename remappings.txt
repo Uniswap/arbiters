@@ -7,6 +7,7 @@ solady/=lib/the-compact/lib/solady/src/
 soledge/=lib/the-compact/lib/soledge/src/
 solmate/=lib/the-compact/lib/permit2/lib/solmate/
 the-compact/=lib/the-compact/
+tribunal/=lib/tribunal/src/
 tstorish/=lib/the-compact/lib/tstorish/src/
 hyperlane/=node_modules/@hyperlane-xyz/core
 @openzeppelin/contracts/=node_modules/@openzeppelin/contracts
