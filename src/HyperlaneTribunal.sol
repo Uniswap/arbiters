@@ -12,14 +12,16 @@ string constant WITNESS_TYPESTRING =
     "Mandate mandate)Mandate(uint256 chainId,address tribunal,address recipient,uint256 expires,address token,uint256 minimumAmount,uint256 baselinePriorityFee,uint256 scalingFactor,bytes32 salt)";
 
 library Message {
-    function encode(Tribunal.Compact calldata compact, bytes32 mandateHash, uint256 claimedAmount, address claimant)
+    function encode(Tribunal.Claim calldata claim, bytes32 mandateHash, uint256 claimedAmount, address claimant)
         internal
         pure
         returns (bytes memory)
     {
-        require(
-            compact.allocatorSignature.length == 64 && compact.sponsorSignature.length == 64, "invalid signature length"
-        );
+        bytes calldata sponsorSignature = claim.sponsorSignature;
+        bytes calldata allocatorSignature = claim.allocatorSignature;
+        Tribunal.Compact calldata compact = claim.compact;
+
+        require(sponsorSignature.length == 64 && allocatorSignature.length == 64, "invalid signature length");
 
         return abi.encodePacked(
             compact.arbiter,
@@ -27,9 +29,9 @@ library Message {
             compact.nonce,
             compact.expires,
             compact.id,
-            compact.maximumAmount,
-            compact.allocatorSignature,
-            compact.sponsorSignature,
+            compact.amount,
+            allocatorSignature,
+            sponsorSignature,
             mandateHash,
             claimedAmount,
             claimant
@@ -80,43 +82,43 @@ contract HyperlaneTribunal is Router, Tribunal {
 
     /**
      * @dev Process the directive for token claims
-     * @param compact The claim parameters
+     * @param claim The claim parameters
      * @param mandateHash The derived mandate hash
-     * @param directive The execution details
+     * @param claimant The recipient of claimed tokens on claim chain
      * @param claimAmount The amount to claim
      */
     function _processDirective(
-        Tribunal.Compact calldata compact,
+        Tribunal.Claim calldata claim,
         bytes32 mandateHash,
-        Directive memory directive,
+        address claimant,
         uint256 claimAmount
     ) internal virtual override {
-        _Router_dispatch(
-            uint32(compact.chainId),
-            directive.dispensation,
-            Message.encode(compact, mandateHash, claimAmount, directive.claimant),
-            "",
-            address(hook)
-        );
+        uint32 chainId = uint32(claim.chainId);
+        bytes memory message = Message.encode(claim, mandateHash, claimAmount, claimant);
+
+        uint256 dispensation = _Router_quoteDispatch(chainId, message, "", address(hook));
+
+        _Router_dispatch(chainId, dispensation, message, "", address(hook));
     }
 
     /**
      * @dev Derive the quote for the dispensation required for
      * the directive for token claims
-     * @param compact The claim parameters
+     * @param claim The claim parameters
      * @param mandateHash The derived mandate hash
      * @param claimant The address of the claimant
      * @param claimAmount The amount to claim
      * @return dispensation The quoted dispensation amount
      */
-    function _quoteDirective(
-        Tribunal.Compact calldata compact,
-        bytes32 mandateHash,
-        address claimant,
-        uint256 claimAmount
-    ) internal view virtual override returns (uint256 dispensation) {
+    function _quoteDirective(Tribunal.Claim calldata claim, bytes32 mandateHash, address claimant, uint256 claimAmount)
+        internal
+        view
+        virtual
+        override
+        returns (uint256 dispensation)
+    {
         return _Router_quoteDispatch(
-            uint32(compact.chainId), Message.encode(compact, mandateHash, claimAmount, claimant), "", address(hook)
+            uint32(claim.chainId), Message.encode(claim, mandateHash, claimAmount, claimant), "", address(hook)
         );
     }
 
