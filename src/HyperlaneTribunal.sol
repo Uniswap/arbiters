@@ -144,7 +144,7 @@ contract HyperlaneTribunal is Router, Tribunal {
 
         // Only assign sponsorSignature if provided signature has nonzero bytes
         bytes memory sponsorSignature;
-        if keccak256(rawSponsorSignature) != bytes32(0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5) {
+        if (keccak256(rawSponsorSignature) != bytes32(0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5)) {
             sponsorSignature = rawSponsorSignature;
         }
 
