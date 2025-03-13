@@ -2,25 +2,30 @@
 pragma solidity ^0.8.27;
 
 import {ITheCompactClaims} from "the-compact/src/interfaces/ITheCompactClaims.sol";
-import {ClaimWithWitness} from "the-compact/src/types/Claims.sol";
+import {ClaimWithWitness, QualifiedClaimWithWitness} from "the-compact/src/types/Claims.sol";
 import {Compact} from "the-compact/src/types/EIP712Types.sol";
 import {Tribunal} from "tribunal/Tribunal.sol";
 
 import {Router} from "hyperlane/contracts/client/Router.sol";
 
+error InvalidChainId(uint256 chainId);
+
 string constant WITNESS_TYPESTRING =
     "Mandate mandate)Mandate(uint256 chainId,address tribunal,address recipient,uint256 expires,address token,uint256 minimumAmount,uint256 baselinePriorityFee,uint256 scalingFactor,bytes32 salt)";
 
-library Message {
-    function encode(Tribunal.Claim calldata claim, bytes32 mandateHash, uint256 claimedAmount, address claimant)
-        internal
-        pure
-        returns (bytes memory)
-    {
-        bytes calldata sponsorSignature = claim.sponsorSignature;
-        bytes calldata allocatorSignature = claim.allocatorSignature;
-        Tribunal.Compact calldata compact = claim.compact;
+// keccak256("TargetBlock(bytes32 claimHash,uint256 targetBlock)")
+bytes32 constant QUALIFICATION_TYPEHASH = 0x2deeb96291c96147a8423f886aa3dea79617ebd209a006ac948d8b0afff67493;
 
+library Message {
+    function encode(
+        Tribunal.Compact calldata compact,
+        bytes calldata sponsorSignature,
+        bytes calldata allocatorSignature,
+        bytes32 mandateHash,
+        uint256 claimedAmount,
+        address claimant,
+        uint256 targetBlock
+    ) internal pure returns (bytes memory) {
         require(sponsorSignature.length == 64 && allocatorSignature.length == 64, "invalid signature length");
 
         return abi.encodePacked(
@@ -34,7 +39,8 @@ library Message {
             sponsorSignature,
             mandateHash,
             claimedAmount,
-            claimant
+            claimant,
+            targetBlock
         );
     }
 
@@ -51,10 +57,11 @@ library Message {
             bytes calldata sponsorSignature,
             bytes32 witness,
             uint256 claimedAmount,
-            address claimant
+            address claimant,
+            uint256 targetBlock
         )
     {
-        require(message.length == 380, "invalid message length");
+        require(message.length == 412, "invalid message length");
         address arbiter = address(bytes20(message[0:20]));
         require(arbiter == address(this), "invalid arbiter");
 
@@ -68,6 +75,7 @@ library Message {
         witness = bytes32(message[296:328]);
         claimedAmount = uint256(bytes32(message[328:360]));
         claimant = address(bytes20(message[360:380]));
+        targetBlock = uint256(bytes32(message[380:412]));
     }
 }
 
@@ -81,44 +89,70 @@ contract HyperlaneTribunal is Router, Tribunal {
     }
 
     /**
-     * @dev Process the directive for token claims
-     * @param claim The claim parameters
-     * @param mandateHash The derived mandate hash
-     * @param claimant The recipient of claimed tokens on claim chain
-     * @param claimAmount The amount to claim
+     * @notice Process the mandated directive (i.e. trigger settlement).
+     * @param chainId The claim chain where the resource lock is held.
+     * @param compact The compact parameters.
+     * @param sponsorSignature The signature of the sponsor.
+     * @param allocatorSignature The signature of the allocator.
+     * @param mandateHash The derived mandate hash.
+     * @param claimant The recipient of claimed tokens on claim chain.
+     * @param claimAmount The amount to claim.
+     * @param targetBlock The targeted fill block, or 0 for no target block.
      */
     function _processDirective(
-        Tribunal.Claim calldata claim,
+        uint256 chainId,
+        Tribunal.Compact calldata compact,
+        bytes calldata sponsorSignature,
+        bytes calldata allocatorSignature,
         bytes32 mandateHash,
         address claimant,
-        uint256 claimAmount
+        uint256 claimAmount,
+        uint256 targetBlock
     ) internal virtual override {
-        uint32 chainId = uint32(claim.chainId);
-        bytes memory message = Message.encode(claim, mandateHash, claimAmount, claimant);
+        bytes memory message = Message.encode(
+            compact, sponsorSignature, allocatorSignature, mandateHash, claimAmount, claimant, targetBlock
+        );
 
-        uint256 dispensation = _Router_quoteDispatch(chainId, message, "", address(hook));
+        if (chainId > type(uint32).max) {
+            revert InvalidChainId(chainId);
+        }
 
-        _Router_dispatch(chainId, dispensation, message, "", address(hook));
+        uint32 downcastedChainId = uint32(chainId);
+
+        uint256 dispensation = _Router_quoteDispatch(downcastedChainId, message, "", address(hook));
+
+        _Router_dispatch(downcastedChainId, dispensation, message, "", address(hook));
     }
 
     /**
      * @dev Derive the quote for the dispensation required for
-     * the directive for token claims
-     * @param claim The claim parameters
-     * @param mandateHash The derived mandate hash
-     * @param claimant The address of the claimant
-     * @param claimAmount The amount to claim
-     * @return dispensation The quoted dispensation amount
+     * the directive for token claims.
+     * @param chainId The claim chain where the resource lock is held.
+     * @param compact The compact parameters.
+     * @param sponsorSignature The signature of the sponsor.
+     * @param allocatorSignature The signature of the allocator.
+     * @param mandateHash The derived mandate hash.
+     * @param claimant The recipient of claimed tokens on claim chain.
+     * @param claimAmount The amount to claim.
+     * @param targetBlock The targeted fill block, or 0 for no target block.
      */
-    function _quoteDirective(Tribunal.Claim calldata claim, bytes32 mandateHash, address claimant, uint256 claimAmount)
-        internal
-        view
-        virtual
-        override
-        returns (uint256 dispensation)
-    {
+    function _quoteDirective(
+        uint256 chainId,
+        Tribunal.Compact calldata compact,
+        bytes calldata sponsorSignature,
+        bytes calldata allocatorSignature,
+        bytes32 mandateHash,
+        address claimant,
+        uint256 claimAmount,
+        uint256 targetBlock
+    ) internal view virtual override returns (uint256 dispensation) {
         return _Router_quoteDispatch(
-            uint32(claim.chainId), Message.encode(claim, mandateHash, claimAmount, claimant), "", address(hook)
+            uint32(chainId),
+            Message.encode(
+                compact, sponsorSignature, allocatorSignature, mandateHash, claimAmount, claimant, targetBlock
+            ),
+            "",
+            address(hook)
         );
     }
 
@@ -139,29 +173,57 @@ contract HyperlaneTribunal is Router, Tribunal {
             bytes calldata rawSponsorSignature,
             bytes32 witness,
             uint256 claimedAmount,
-            address claimant
+            address claimant,
+            uint256 targetBlock
         ) = message.decode();
 
         // Only assign sponsorSignature if provided signature has nonzero bytes
         bytes memory sponsorSignature;
-        if (keccak256(rawSponsorSignature) != bytes32(0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5)) {
+        if (
+            keccak256(rawSponsorSignature)
+                != bytes32(0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5)
+        ) {
             sponsorSignature = rawSponsorSignature;
         }
 
-        ClaimWithWitness memory claimPayload = ClaimWithWitness({
-            witnessTypestring: WITNESS_TYPESTRING,
-            witness: witness,
-            allocatorSignature: allocatorSignature,
-            sponsorSignature: sponsorSignature,
-            sponsor: sponsor,
-            nonce: nonce,
-            expires: expires,
-            id: id,
-            allocatedAmount: allocatedAmount,
-            amount: claimedAmount,
-            claimant: claimant
-        });
+        // Use unqualified claim if no target block is provided
+        if (targetBlock == uint256(0)) {
+            ClaimWithWitness memory claimPayload = ClaimWithWitness({
+                allocatorSignature: allocatorSignature,
+                sponsorSignature: sponsorSignature,
+                sponsor: sponsor,
+                nonce: nonce,
+                expires: expires,
+                witness: witness,
+                witnessTypestring: WITNESS_TYPESTRING,
+                id: id,
+                allocatedAmount: allocatedAmount,
+                claimant: claimant,
+                amount: claimedAmount
+            });
 
-        theCompact.claim(claimPayload);
+            theCompact.claimAndWithdraw(claimPayload);
+        } else {
+            // Encode the qualification payload using the target block
+            bytes memory qualificationPayload = abi.encode(targetBlock);
+
+            QualifiedClaimWithWitness memory claimPayload = QualifiedClaimWithWitness({
+                allocatorSignature: allocatorSignature,
+                sponsorSignature: sponsorSignature,
+                sponsor: sponsor,
+                nonce: nonce,
+                expires: expires,
+                witness: witness,
+                witnessTypestring: WITNESS_TYPESTRING,
+                qualificationTypehash: QUALIFICATION_TYPEHASH,
+                qualificationPayload: qualificationPayload,
+                id: id,
+                allocatedAmount: allocatedAmount,
+                claimant: claimant,
+                amount: claimedAmount
+            });
+
+            theCompact.claimAndWithdraw(claimPayload);
+        }
     }
 }
