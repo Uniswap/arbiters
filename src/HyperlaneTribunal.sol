@@ -13,8 +13,8 @@ error InvalidChainId(uint256 chainId);
 string constant WITNESS_TYPESTRING =
     "Mandate mandate)Mandate(uint256 chainId,address tribunal,address recipient,uint256 expires,address token,uint256 minimumAmount,uint256 baselinePriorityFee,uint256 scalingFactor,bytes32 salt)";
 
-// keccak256("TargetBlock(bytes32 claimHash,uint256 targetBlock)")
-bytes32 constant QUALIFICATION_TYPEHASH = 0x2deeb96291c96147a8423f886aa3dea79617ebd209a006ac948d8b0afff67493;
+// keccak256("TargetBlock(bytes32 claimHash,uint256 targetBlock,uint256 maximumBlocksAfterTarget)")
+bytes32 constant QUALIFICATION_TYPEHASH = 0x1abbddc6baae2ef20428b15d51b5e9b940797d8a967d0bf674fcfe1f8e71afc5;
 
 library Message {
     function encode(
@@ -24,7 +24,8 @@ library Message {
         bytes32 mandateHash,
         uint256 claimedAmount,
         address claimant,
-        uint256 targetBlock
+        uint256 targetBlock,
+        uint256 maximumBlocksAfterTarget
     ) internal pure returns (bytes memory) {
         require(sponsorSignature.length == 64 && allocatorSignature.length == 64, "invalid signature length");
 
@@ -40,7 +41,8 @@ library Message {
             mandateHash,
             claimedAmount,
             claimant,
-            targetBlock
+            targetBlock,
+            maximumBlocksAfterTarget
         );
     }
 
@@ -58,10 +60,11 @@ library Message {
             bytes32 witness,
             uint256 claimedAmount,
             address claimant,
-            uint256 targetBlock
+            uint256 targetBlock,
+            uint256 maximumBlocksAfterTarget
         )
     {
-        require(message.length == 412, "invalid message length");
+        require(message.length == 444, "invalid message length");
         address arbiter = address(bytes20(message[0:20]));
         require(arbiter == address(this), "invalid arbiter");
 
@@ -76,6 +79,7 @@ library Message {
         claimedAmount = uint256(bytes32(message[328:360]));
         claimant = address(bytes20(message[360:380]));
         targetBlock = uint256(bytes32(message[380:412]));
+        maximumBlocksAfterTarget = uint256(bytes32(message[412:444]));
     }
 }
 
@@ -98,6 +102,7 @@ contract HyperlaneTribunal is Router, Tribunal {
      * @param claimant The recipient of claimed tokens on claim chain.
      * @param claimAmount The amount to claim.
      * @param targetBlock The targeted fill block, or 0 for no target block.
+     * @param maximumBlocksAfterTarget Blocks after target that are still fillable.
      */
     function _processDirective(
         uint256 chainId,
@@ -107,10 +112,18 @@ contract HyperlaneTribunal is Router, Tribunal {
         bytes32 mandateHash,
         address claimant,
         uint256 claimAmount,
-        uint256 targetBlock
+        uint256 targetBlock,
+        uint256 maximumBlocksAfterTarget
     ) internal virtual override {
         bytes memory message = Message.encode(
-            compact, sponsorSignature, allocatorSignature, mandateHash, claimAmount, claimant, targetBlock
+            compact,
+            sponsorSignature,
+            allocatorSignature,
+            mandateHash,
+            claimAmount,
+            claimant,
+            targetBlock,
+            maximumBlocksAfterTarget
         );
 
         if (chainId > type(uint32).max) {
@@ -135,6 +148,7 @@ contract HyperlaneTribunal is Router, Tribunal {
      * @param claimant The recipient of claimed tokens on claim chain.
      * @param claimAmount The amount to claim.
      * @param targetBlock The targeted fill block, or 0 for no target block.
+     * @param maximumBlocksAfterTarget Blocks after target that are still fillable.
      */
     function _quoteDirective(
         uint256 chainId,
@@ -144,12 +158,20 @@ contract HyperlaneTribunal is Router, Tribunal {
         bytes32 mandateHash,
         address claimant,
         uint256 claimAmount,
-        uint256 targetBlock
+        uint256 targetBlock,
+        uint256 maximumBlocksAfterTarget
     ) internal view virtual override returns (uint256 dispensation) {
         return _Router_quoteDispatch(
             uint32(chainId),
             Message.encode(
-                compact, sponsorSignature, allocatorSignature, mandateHash, claimAmount, claimant, targetBlock
+                compact,
+                sponsorSignature,
+                allocatorSignature,
+                mandateHash,
+                claimAmount,
+                claimant,
+                targetBlock,
+                maximumBlocksAfterTarget
             ),
             "",
             address(hook)
@@ -174,7 +196,8 @@ contract HyperlaneTribunal is Router, Tribunal {
             bytes32 witness,
             uint256 claimedAmount,
             address claimant,
-            uint256 targetBlock
+            uint256 targetBlock,
+            uint256 maximumBlocksAfterTarget
         ) = message.decode();
 
         // Only assign sponsorSignature if provided signature has nonzero bytes
@@ -205,7 +228,7 @@ contract HyperlaneTribunal is Router, Tribunal {
             theCompact.claimAndWithdraw(claimPayload);
         } else {
             // Encode the qualification payload using the target block
-            bytes memory qualificationPayload = abi.encode(targetBlock);
+            bytes memory qualificationPayload = abi.encode(targetBlock, maximumBlocksAfterTarget);
 
             QualifiedClaimWithWitness memory claimPayload = QualifiedClaimWithWitness({
                 allocatorSignature: allocatorSignature,
