@@ -1,6 +1,7 @@
 [profile.default]
 src = "src"
 out = "out"
+solc_version = "0.8.28"
 evm_version = "cancun"
 via_ir = true
 optimizer_runs = 200
@@ -18,5 +19,3 @@ remappings = [
     "the-compact/=lib/the-compact/",
     "tstorish/=lib/the-compact/lib/tstorish/src/",
 ]
-
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
