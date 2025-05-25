@@ -11,7 +11,7 @@ import {Router} from "hyperlane/contracts/client/Router.sol";
 error InvalidChainId(uint256 chainId);
 
 string constant WITNESS_TYPESTRING =
-    "Mandate mandate)Mandate(uint256 chainId,address tribunal,address recipient,uint256 expires,address token,uint256 minimumAmount,uint256 baselinePriorityFee,uint256 scalingFactor,bytes32 salt)";
+    "Mandate mandate)Mandate(uint256 chainId,address tribunal,address recipient,uint256 expires,address token,uint256 minimumAmount,uint256 baselinePriorityFee,uint256 scalingFactor,uint256[] decayCurve,bytes32 salt)";
 
 // keccak256("TargetBlock(bytes32 claimHash,uint256 targetBlock,uint256 maximumBlocksAfterTarget)")
 bytes32 constant QUALIFICATION_TYPEHASH = 0x1abbddc6baae2ef20428b15d51b5e9b940797d8a967d0bf674fcfe1f8e71afc5;
