@@ -223,7 +223,7 @@ contract HyperlaneTribunalTest is TheCompactTest {
 
         vm.chainId(destination);
         vm.startPrank(filler);
-        destinationTribunal.fill{value: amount}(claim, mandate, filler);
+        destinationTribunal.fill(claim, mandate, filler);
         vm.stopPrank();
 
         vm.chainId(origin);
@@ -457,7 +457,7 @@ contract HyperlaneTribunalTest is TheCompactTest {
         vm.chainId(destination);
         vm.roll(targetBlock);
         vm.startPrank(filler);
-        destinationTribunal.fill{value: amount}(
+        destinationTribunal.fill(
             claim,
             mandate,
             filler,
@@ -474,5 +474,96 @@ contract HyperlaneTribunalTest is TheCompactTest {
         assertEq(token.balanceOf(address(theCompact)), 0);
         assertEq(token.balanceOf(address(claimant)), minimumAmount);
         assertEq(token.balanceOf(address(filler)), amount);
+    }
+
+    function test_hyperlane_tribunal_claimWithWitnessSwap() public {
+        hyperlane_tribunal_setup();
+
+        ResetPeriod resetPeriod = ResetPeriod.TenMinutes;
+        Scope scope = Scope.Multichain;
+        uint256 amount = 1e18;
+        uint256 nonce = 0;
+        uint256 expires = block.timestamp + 1000;
+        address claimant = 0x1111111111111111111111111111111111111111;
+        address arbiter = address(originTribunal);
+        uint256 minimumAmount = amount;
+
+        vm.prank(allocator);
+        theCompact.__registerAllocator(allocator, "");
+
+        vm.prank(swapper);
+        uint256 id = theCompact.deposit(
+            address(token),
+            allocator,
+            resetPeriod,
+            scope,
+            amount,
+            swapper
+        );
+        assertEq(theCompact.balanceOf(swapper, id), amount);
+
+        Tribunal.Mandate memory mandate = Tribunal.Mandate({
+            recipient: claimant,
+            expires: expires,
+            token: address(0),
+            minimumAmount: minimumAmount,
+            baselinePriorityFee: 0,
+            scalingFactor: 0,
+            decayCurve: new uint256[](0),
+            salt: bytes32(0)
+        });
+
+        vm.chainId(destination);
+        bytes32 mandateHash = destinationTribunal.deriveMandateHash(mandate);
+        vm.chainId(origin);
+
+        Tribunal.Compact memory compact = Tribunal.Compact({
+            arbiter: arbiter,
+            sponsor: swapper,
+            nonce: nonce,
+            expires: expires,
+            id: id,
+            amount: amount
+        });
+
+        bytes32 claimHash = destinationTribunal.deriveClaimHash(
+            compact,
+            mandateHash
+        );
+
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                bytes2(0x1901),
+                theCompact.DOMAIN_SEPARATOR(),
+                claimHash
+            )
+        );
+
+        (bytes32 r, bytes32 vs) = vm.signCompact(swapperPrivateKey, digest);
+        bytes memory sponsorSignature = abi.encodePacked(r, vs);
+
+        (r, vs) = vm.signCompact(allocatorPrivateKey, digest);
+        bytes memory allocatorSignature = abi.encodePacked(r, vs);
+
+        Tribunal.Claim memory claim = Tribunal.Claim({
+            chainId: origin,
+            compact: compact,
+            sponsorSignature: sponsorSignature,
+            allocatorSignature: allocatorSignature
+        });
+
+        vm.chainId(destination);
+        vm.startPrank(filler);
+        destinationTribunal.fill{value: minimumAmount}(claim, mandate, filler);
+        vm.stopPrank();
+
+        vm.chainId(origin);
+        originMailbox.processNextInboundMessage();
+
+        assertEq(theCompact.balanceOf(swapper, id), 0);
+        assertEq(theCompact.balanceOf(claimant, id), 0);
+        assertEq(token.balanceOf(address(theCompact)), 0);
+        assertEq(address(claimant).balance, minimumAmount);
+        assertEq(token.balanceOf(address(filler)), amount + 1e18);
     }
 }
