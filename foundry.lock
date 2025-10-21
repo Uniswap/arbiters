@@ -1,0 +1,17 @@
+{
+  "lib/forge-std": {
+    "rev": "1eea5bae12ae557d589f9f0f0edae2faa47cb262"
+  },
+  "lib/the-compact": {
+    "rev": "ac25e50dbfd51358f206919e649ff79b042a5dab"
+  },
+  "lib/tribunal": {
+    "rev": "08e5a36903e75e6b53d65ec9b767dd6958313f5d"
+  },
+  "lib/wormhole-solidity-sdk": {
+    "tag": {
+      "name": "v0.1.0",
+      "rev": "b9e129e65d34827d92fceeed8c87d3ecdfc801d0"
+    }
+  }
+}
