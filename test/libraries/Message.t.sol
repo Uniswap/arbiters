@@ -10,7 +10,6 @@ import {BatchClaimComponent, Component} from "the-compact/src/types/Components.s
 /// @notice Wrapper contract to call Message library functions in tests
 /// @dev Needed because library functions use calldata parameters
 
-//TODO: add edge cases for sponsorSignature and allocatorSignature being 0
 contract MessageWrapper {
     using Message for bytes;
 
@@ -89,7 +88,8 @@ contract MessageTest is Test {
         bytes memory encoded = wrapper.encode(compact, SPONSOR_SIG, ALLOCATOR_SIG, MANDATE_HASH, CLAIMANT, claimAmounts);
 
         assertGt(encoded.length, 0, "Encoded message should not be empty");
-        assertEq(encoded.length, 392, "Encoded message length should be 392 bytes");
+        // Expected length: 137 (fixed + flags + mandateHash) + 128 (both sigs) + 128 (one claim) = 393 bytes
+        assertEq(encoded.length, 393, "Encoded message length should be 393 bytes");
 
         // Splice the bytecode and verify the fixed fields using raw assembly
         address extractedArbiter;
@@ -120,31 +120,39 @@ contract MessageTest is Test {
             // Extract expires (bytes 72-104)
             extractedExpires := mload(add(dataStart, 72))
 
-            // Extract mandateHash (bytes 104-136)
-            extractedMandateHash := mload(add(dataStart, 104))
+            // Byte 104: flags (skipped in extraction)
+            // Extract mandateHash (bytes 105-136)
+            extractedMandateHash := mload(add(dataStart, 105))
 
-            // Extract allocatorSignature (bytes 136-200, 64 bytes)
+            // Extract allocatorSignature (bytes 137-200, 64 bytes)
             let allocatorSigPtr := add(extractedAllocatorSig, 32) // Skip length prefix
-            mstore(allocatorSigPtr, mload(add(dataStart, 136)))
-            mstore(add(allocatorSigPtr, 32), mload(add(dataStart, 168)))
+            mstore(allocatorSigPtr, mload(add(dataStart, 137)))
+            mstore(add(allocatorSigPtr, 32), mload(add(dataStart, 169)))
 
-            // Extract sponsorSignature (bytes 200-264, 64 bytes)
+            // Extract sponsorSignature (bytes 201-264, 64 bytes)
             let sponsorSigPtr := add(extractedSponsorSig, 32) // Skip length prefix
-            mstore(sponsorSigPtr, mload(add(dataStart, 200)))
-            mstore(add(sponsorSigPtr, 32), mload(add(dataStart, 232)))
+            mstore(sponsorSigPtr, mload(add(dataStart, 201)))
+            mstore(add(sponsorSigPtr, 32), mload(add(dataStart, 233)))
 
-            // Extract claim ID (bytes 264-296)
-            extractedClaimId := mload(add(dataStart, 264))
+            // Extract claim ID (bytes 265-296)
+            extractedClaimId := mload(add(dataStart, 265))
 
-            // Extract allocated amount (bytes 296-328)
-            extractedAllocatedAmount := mload(add(dataStart, 296))
+            // Extract allocated amount (bytes 297-328)
+            extractedAllocatedAmount := mload(add(dataStart, 297))
 
-            // Extract claimant (bytes 328-360)
-            extractedClaimant := mload(add(dataStart, 328))
+            // Extract claimant (bytes 329-360)
+            extractedClaimant := mload(add(dataStart, 329))
 
-            // Extract claim amount (bytes 360-392)
-            extractedClaimAmount := mload(add(dataStart, 360))
+            // Extract claim amount (bytes 361-392)
+            extractedClaimAmount := mload(add(dataStart, 361))
         }
+
+        // Verify flags byte is 0x03 (both signatures)
+        uint8 flags;
+        assembly {
+            flags := byte(0, mload(add(encoded, add(32, 104))))
+        }
+        assertEq(flags, 0x03, "Flags should be 0x03 (both signatures)");
 
         // Verify all extracted fields
         assertEq(extractedArbiter, ARBITER, "Arbiter should match at bytes 0-20");
@@ -180,8 +188,8 @@ contract MessageTest is Test {
 
         bytes memory encoded = wrapper.encode(compact, SPONSOR_SIG, ALLOCATOR_SIG, MANDATE_HASH, CLAIMANT, claimAmounts);
 
-        // Expected length: 264 (fixed) + 128 * 3 (three claims) = 648 bytes
-        assertEq(encoded.length, 648, "Encoded message length should be 648 bytes");
+        // Expected length: 137 (fixed + flags + mandateHash) + 128 (both sigs) + 128 * 3 (three claims) = 649 bytes
+        assertEq(encoded.length, 649, "Encoded message length should be 649 bytes");
 
         // Splice the bytecode and verify the fixed fields using raw assembly
         address extractedArbiter;
@@ -201,39 +209,47 @@ contract MessageTest is Test {
         assembly {
             let dataStart := add(encoded, 32)
 
-            // Extract fixed fields (bytes 0-264)
+            // Extract fixed fields
             extractedArbiter := shr(96, mload(dataStart))
             extractedSponsor := shr(96, mload(add(dataStart, 20)))
             extractedNonce := mload(add(dataStart, 40))
             extractedExpires := mload(add(dataStart, 72))
-            extractedMandateHash := mload(add(dataStart, 104))
+            // Byte 104: flags (skipped)
+            extractedMandateHash := mload(add(dataStart, 105))
 
             let allocatorSigPtr := add(extractedAllocatorSig, 32)
-            mstore(allocatorSigPtr, mload(add(dataStart, 136)))
-            mstore(add(allocatorSigPtr, 32), mload(add(dataStart, 168)))
+            mstore(allocatorSigPtr, mload(add(dataStart, 137)))
+            mstore(add(allocatorSigPtr, 32), mload(add(dataStart, 169)))
 
             let sponsorSigPtr := add(extractedSponsorSig, 32)
-            mstore(sponsorSigPtr, mload(add(dataStart, 200)))
-            mstore(add(sponsorSigPtr, 32), mload(add(dataStart, 232)))
+            mstore(sponsorSigPtr, mload(add(dataStart, 201)))
+            mstore(add(sponsorSigPtr, 32), mload(add(dataStart, 233)))
 
-            // Extract claim 0 (bytes 264-392)
-            mstore(extractedClaimIds, mload(add(dataStart, 264)))
-            mstore(extractedAllocatedAmounts, mload(add(dataStart, 296)))
-            mstore(extractedClaimants, mload(add(dataStart, 328)))
-            mstore(extractedClaimAmounts, mload(add(dataStart, 360)))
+            // Extract claim 0 (bytes 265-392)
+            mstore(extractedClaimIds, mload(add(dataStart, 265)))
+            mstore(extractedAllocatedAmounts, mload(add(dataStart, 297)))
+            mstore(extractedClaimants, mload(add(dataStart, 329)))
+            mstore(extractedClaimAmounts, mload(add(dataStart, 361)))
 
-            // Extract claim 1 (bytes 392-520)
-            mstore(add(extractedClaimIds, 32), mload(add(dataStart, 392)))
-            mstore(add(extractedAllocatedAmounts, 32), mload(add(dataStart, 424)))
-            mstore(add(extractedClaimants, 32), mload(add(dataStart, 456)))
-            mstore(add(extractedClaimAmounts, 32), mload(add(dataStart, 488)))
+            // Extract claim 1 (bytes 393-520)
+            mstore(add(extractedClaimIds, 32), mload(add(dataStart, 393)))
+            mstore(add(extractedAllocatedAmounts, 32), mload(add(dataStart, 425)))
+            mstore(add(extractedClaimants, 32), mload(add(dataStart, 457)))
+            mstore(add(extractedClaimAmounts, 32), mload(add(dataStart, 489)))
 
-            // Extract claim 2 (bytes 520-648)
-            mstore(add(extractedClaimIds, 64), mload(add(dataStart, 520)))
-            mstore(add(extractedAllocatedAmounts, 64), mload(add(dataStart, 552)))
-            mstore(add(extractedClaimants, 64), mload(add(dataStart, 584)))
-            mstore(add(extractedClaimAmounts, 64), mload(add(dataStart, 616)))
+            // Extract claim 2 (bytes 521-648)
+            mstore(add(extractedClaimIds, 64), mload(add(dataStart, 521)))
+            mstore(add(extractedAllocatedAmounts, 64), mload(add(dataStart, 553)))
+            mstore(add(extractedClaimants, 64), mload(add(dataStart, 585)))
+            mstore(add(extractedClaimAmounts, 64), mload(add(dataStart, 617)))
         }
+
+        // Verify flags byte is 0x03 (both signatures)
+        uint8 flags;
+        assembly {
+            flags := byte(0, mload(add(encoded, add(32, 104))))
+        }
+        assertEq(flags, 0x03, "Flags should be 0x03 (both signatures)");
 
         // Verify fixed fields
         assertEq(extractedArbiter, ARBITER, "Arbiter should match at bytes 0-20");
@@ -541,5 +557,235 @@ contract MessageTest is Test {
             emit log_named_uint("Gas used for decoding with commitments:", numCommitments);
             emit log_named_uint("Gas amount:", gasUsed);
         }
+    }
+
+    /// @notice Test encode with both signatures empty (0 bytes)
+    function test_encode_bothSignaturesEmpty() public view {
+        Lock[] memory commitments = new Lock[](1);
+        commitments[0] = Lock({lockTag: LOCK_TAG_1, token: TOKEN_1, amount: 1000});
+
+        BatchCompact memory compact = BatchCompact({
+            arbiter: ARBITER, sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: commitments
+        });
+
+        uint256[] memory claimAmounts = new uint256[](1);
+        claimAmounts[0] = 500;
+
+        bytes memory emptySig = "";
+        bytes memory encoded = wrapper.encode(compact, emptySig, emptySig, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        // Expected length: 137 (fixed header + flags + mandateHash) + 0 (no sigs) + 128 (one claim) = 265 bytes
+        assertEq(encoded.length, 265, "Encoded message length should be 265 bytes");
+
+        // Verify flags byte is 0x00 (no signatures)
+        uint8 flags;
+        assembly {
+            flags := byte(0, mload(add(encoded, add(32, 104))))
+        }
+        assertEq(flags, 0x00, "Flags should be 0x00 (no signatures)");
+    }
+
+    /// @notice Test encode with only allocator signature
+    function test_encode_onlyAllocatorSignature() public view {
+        Lock[] memory commitments = new Lock[](1);
+        commitments[0] = Lock({lockTag: LOCK_TAG_1, token: TOKEN_1, amount: 1000});
+
+        BatchCompact memory compact = BatchCompact({
+            arbiter: ARBITER, sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: commitments
+        });
+
+        uint256[] memory claimAmounts = new uint256[](1);
+        claimAmounts[0] = 500;
+
+        bytes memory emptySig = "";
+        bytes memory encoded = wrapper.encode(compact, emptySig, ALLOCATOR_SIG, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        // Expected length: 137 + 64 (allocator sig only) + 128 = 329 bytes
+        assertEq(encoded.length, 329, "Encoded message length should be 329 bytes");
+
+        // Verify flags byte is 0x01 (only allocator signature)
+        uint8 flags;
+        assembly {
+            flags := byte(0, mload(add(encoded, add(32, 104))))
+        }
+        assertEq(flags, 0x01, "Flags should be 0x01 (only allocator signature)");
+    }
+
+    /// @notice Test encode with only sponsor signature
+    function test_encode_onlySponsorSignature() public view {
+        Lock[] memory commitments = new Lock[](1);
+        commitments[0] = Lock({lockTag: LOCK_TAG_1, token: TOKEN_1, amount: 1000});
+
+        BatchCompact memory compact = BatchCompact({
+            arbiter: ARBITER, sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: commitments
+        });
+
+        uint256[] memory claimAmounts = new uint256[](1);
+        claimAmounts[0] = 500;
+
+        bytes memory emptySig = "";
+        bytes memory encoded = wrapper.encode(compact, SPONSOR_SIG, emptySig, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        // Expected length: 137 + 64 (sponsor sig only) + 128 = 329 bytes
+        assertEq(encoded.length, 329, "Encoded message length should be 329 bytes");
+
+        // Verify flags byte is 0x02 (only sponsor signature)
+        uint8 flags;
+        assembly {
+            flags := byte(0, mload(add(encoded, add(32, 104))))
+        }
+        assertEq(flags, 0x02, "Flags should be 0x02 (only sponsor signature)");
+    }
+
+    /// @notice Test decode with both signatures empty
+    function test_decode_bothSignaturesEmpty() public {
+        Lock[] memory commitments = new Lock[](1);
+        commitments[0] = Lock({lockTag: LOCK_TAG_1, token: TOKEN_1, amount: 1000});
+
+        BatchCompact memory compact = BatchCompact({
+            arbiter: address(wrapper), sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: commitments
+        });
+
+        uint256[] memory claimAmounts = new uint256[](1);
+        claimAmounts[0] = 500;
+
+        bytes memory emptySig = "";
+        bytes memory encoded = wrapper.encode(compact, emptySig, emptySig, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        (
+            address decodedSponsor,
+            uint256 decodedNonce,
+            uint256 decodedExpires,
+            bytes memory decodedAllocatorSig,
+            bytes memory decodedSponsorSig,
+            bytes32 decodedWitness,
+            BatchClaimComponent[] memory decodedClaims
+        ) = wrapper.decode(encoded);
+
+        assertEq(decodedSponsor, SPONSOR, "Sponsor should match");
+        assertEq(decodedNonce, NONCE, "Nonce should match");
+        assertEq(decodedExpires, EXPIRES, "Expires should match");
+        assertEq(decodedAllocatorSig.length, 0, "Allocator signature should be empty");
+        assertEq(decodedSponsorSig.length, 0, "Sponsor signature should be empty");
+        assertEq(decodedWitness, MANDATE_HASH, "Witness should match");
+        assertEq(decodedClaims.length, 1, "Should have 1 claim");
+    }
+
+    /// @notice Test decode with only allocator signature
+    function test_decode_onlyAllocatorSignature() public {
+        Lock[] memory commitments = new Lock[](1);
+        commitments[0] = Lock({lockTag: LOCK_TAG_1, token: TOKEN_1, amount: 1000});
+
+        BatchCompact memory compact = BatchCompact({
+            arbiter: address(wrapper), sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: commitments
+        });
+
+        uint256[] memory claimAmounts = new uint256[](1);
+        claimAmounts[0] = 500;
+
+        bytes memory emptySig = "";
+        bytes memory encoded = wrapper.encode(compact, emptySig, ALLOCATOR_SIG, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        (,,,
+            bytes memory decodedAllocatorSig,
+            bytes memory decodedSponsorSig,,
+        ) = wrapper.decode(encoded);
+
+        assertEq(decodedAllocatorSig, ALLOCATOR_SIG, "Allocator signature should match");
+        assertEq(decodedSponsorSig.length, 0, "Sponsor signature should be empty");
+    }
+
+    /// @notice Test decode with only sponsor signature
+    function test_decode_onlySponsorSignature() public {
+        Lock[] memory commitments = new Lock[](1);
+        commitments[0] = Lock({lockTag: LOCK_TAG_1, token: TOKEN_1, amount: 1000});
+
+        BatchCompact memory compact = BatchCompact({
+            arbiter: address(wrapper), sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: commitments
+        });
+
+        uint256[] memory claimAmounts = new uint256[](1);
+        claimAmounts[0] = 500;
+
+        bytes memory emptySig = "";
+        bytes memory encoded = wrapper.encode(compact, SPONSOR_SIG, emptySig, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        (,,,
+            bytes memory decodedAllocatorSig,
+            bytes memory decodedSponsorSig,,
+        ) = wrapper.decode(encoded);
+
+        assertEq(decodedAllocatorSig.length, 0, "Allocator signature should be empty");
+        assertEq(decodedSponsorSig, SPONSOR_SIG, "Sponsor signature should match");
+    }
+
+    /// @notice Test encode/decode round trip with empty signatures
+    function test_roundTrip_emptySignatures() public {
+        Lock[] memory commitments = new Lock[](2);
+        commitments[0] = Lock({lockTag: LOCK_TAG_1, token: TOKEN_1, amount: 1000});
+        commitments[1] = Lock({lockTag: LOCK_TAG_2, token: TOKEN_2, amount: 2000});
+
+        BatchCompact memory compact = BatchCompact({
+            arbiter: address(wrapper), sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: commitments
+        });
+
+        uint256[] memory claimAmounts = new uint256[](2);
+        claimAmounts[0] = 500;
+        claimAmounts[1] = 1500;
+
+        bytes memory emptySig = "";
+        bytes memory encoded = wrapper.encode(compact, emptySig, emptySig, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        (
+            address decodedSponsor,
+            uint256 decodedNonce,
+            uint256 decodedExpires,
+            bytes memory decodedAllocatorSig,
+            bytes memory decodedSponsorSig,
+            bytes32 decodedWitness,
+            BatchClaimComponent[] memory decodedClaims
+        ) = wrapper.decode(encoded);
+
+        // Verify all fields preserved
+        assertEq(decodedSponsor, SPONSOR, "Sponsor should be preserved");
+        assertEq(decodedNonce, NONCE, "Nonce should be preserved");
+        assertEq(decodedExpires, EXPIRES, "Expires should be preserved");
+        assertEq(decodedAllocatorSig.length, 0, "Allocator signature should be empty");
+        assertEq(decodedSponsorSig.length, 0, "Sponsor signature should be empty");
+        assertEq(decodedWitness, MANDATE_HASH, "Witness should be preserved");
+        assertEq(decodedClaims.length, 2, "Should have 2 claims");
+
+        // Verify claims preserved
+        uint256 expectedId0 = uint256(bytes32(LOCK_TAG_1)) | uint256(uint160(TOKEN_1));
+        assertEq(decodedClaims[0].id, expectedId0, "Claim 0 ID should match");
+        assertEq(decodedClaims[0].allocatedAmount, 1000, "Claim 0 allocated amount should match");
+    }
+
+    /// @notice Test that message size is correctly reduced with empty signatures
+    function test_messageSizeReduction() public view {
+        Lock[] memory commitments = new Lock[](1);
+        commitments[0] = Lock({lockTag: LOCK_TAG_1, token: TOKEN_1, amount: 1000});
+
+        BatchCompact memory compact = BatchCompact({
+            arbiter: ARBITER, sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: commitments
+        });
+
+        uint256[] memory claimAmounts = new uint256[](1);
+        claimAmounts[0] = 500;
+
+        bytes memory emptySig = "";
+
+        // Both signatures present
+        bytes memory fullMsg = wrapper.encode(compact, SPONSOR_SIG, ALLOCATOR_SIG, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        // Only allocator signature
+        bytes memory oneMsg = wrapper.encode(compact, emptySig, ALLOCATOR_SIG, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        // No signatures
+        bytes memory emptyMsg = wrapper.encode(compact, emptySig, emptySig, MANDATE_HASH, CLAIMANT, claimAmounts);
+
+        // Verify size differences
+        assertEq(fullMsg.length, oneMsg.length + 64, "Should save 64 bytes with one empty signature");
+        assertEq(fullMsg.length, emptyMsg.length + 128, "Should save 128 bytes with both empty signatures");
     }
 }
