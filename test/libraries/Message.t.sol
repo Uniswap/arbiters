@@ -280,7 +280,7 @@ contract MessageTest is Test {
 
         bytes memory invalidSig = hex"1111"; // Only 2 bytes instead of 64
 
-        vm.expectRevert("invalid signature length");
+        vm.expectRevert("invalid message signature length");
         wrapper.encode(compact, invalidSig, ALLOCATOR_SIG, MANDATE_HASH, CLAIMANT, claimAmounts);
     }
 
@@ -298,7 +298,7 @@ contract MessageTest is Test {
 
         bytes memory invalidSig = hex"3333"; // Only 2 bytes instead of 64
 
-        vm.expectRevert("invalid signature length");
+        vm.expectRevert("invalid message signature length");
         wrapper.encode(compact, SPONSOR_SIG, invalidSig, MANDATE_HASH, CLAIMANT, claimAmounts);
     }
 
