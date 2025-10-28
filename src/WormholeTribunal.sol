@@ -250,28 +250,14 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         }
     }
 
-
     /**
-     * @notice Posts a batch of claim hashes to a single destination chain for user self-relay
-     * @dev Uses wormhole.publishMessage() with nonce = MessagePackingType.BATCH_POST
-     *
-     * Implementation steps:
-     * 1. Encode the batch using Message.encodeBatchPost(chainId, claimHashes)
-     * 2. Get the Wormhole message fee: wormhole.messageFee()
-     * 3. Validate msg.value >= wormholeFee
-     * 4. Call wormhole.publishMessage{value: wormholeFee}(
-     *      uint32(MessagePackingType.BATCH_POST),  // nonce indicates message type
-     *      encodedBatch,
-     *      CONSISTENCY_LEVEL
-     *    )
-     * 5. Return the sequence number
-     *
+     * @notice Internal function to post a batch of claim hashes without refund logic
+     * @dev Used by both batchPost and batchMultichainPost to avoid duplicate refunds
      * @param chainId The destination chain ID
      * @param claimHashes Array of claim hashes to post
      * @return sequence The Wormhole message sequence number
      */
-    // probably want read function to make sure its not gonna be too big and claim hashes are valid
-    function batchPost(uint256 chainId, bytes32[] memory claimHashes) public payable virtual returns (uint64 sequence) {
+    function _batchPost(uint256 chainId, bytes32[] memory claimHashes) internal virtual returns (uint64 sequence) {
         // Validate inputs
         require(chainId != 0, "Invalid chainId");
         require(claimHashes.length > 0, "Empty claim hashes array");
@@ -283,44 +269,61 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
 
         // Get the Wormhole message fee
-        uint256 wormholeFee = wormhole.messageFee();
+        uint256 fee = wormhole.messageFee();
 
-        // Capture balance before paying fee (includes any remaining msg.value from upstream + forced ETH)
-        uint256 balanceBeforeFee = address(this).balance;
-        require(balanceBeforeFee >= wormholeFee, "Insufficient ETH for wormhole fee");
+        // Validate sufficient balance
+        require(address(this).balance >= fee, "Insufficient ETH for wormhole fee");
 
         // Publish message with MessagePackingType.BATCH_POST as nonce
-        sequence = wormhole.publishMessage{value: wormholeFee}(
+        sequence = wormhole.publishMessage{value: fee}(
             uint32(MessagePackingType.BATCH_POST),
             encodedBatch,
             CONSISTENCY_LEVEL
         );
+    }
+
+    /**
+     * @notice Posts a batch of claim hashes to a single destination chain for user self-relay
+     * @dev Uses wormhole.publishMessage() with nonce = MessagePackingType.BATCH_POST
+     * @param chainId The destination chain ID
+     * @param claimHashes Array of claim hashes to post
+     * @return sequence The Wormhole message sequence number
+     */
+    function batchPost(uint256 chainId, bytes32[] memory claimHashes) public payable virtual returns (uint64 sequence) {
+        // Call internal function to post batch
+        sequence = _batchPost(chainId, claimHashes);
 
         // Refund entire remaining balance (router pattern)
-        uint256 toRefund = balanceBeforeFee - wormholeFee;
+        uint256 toRefund = address(this).balance; 
         if (toRefund > 0) {
-            msg.sender.safeTransferETH(toRefund);
+            msg.sender.safeTransferETH(toRefund); 
         }
     }
 
     /**
      * @notice Posts batches of claim hashes to multiple destination chains for user self-relay
      * @dev Loops through chains and calls batchPost() for each
-     *
-     * Implementation steps:
-     * 1. Calculate total wormhole fee: batches.length * wormhole.messageFee()
-     * 2. Validate msg.value >= totalFee
-     * 3. Loop through batches array:
-     *    - Call batchPost{value: wormholeFee}(batch.chainId, batch.claimHashes)
-     *    - Track total fees used
-     * 4. Refund excess if any: msg.value - totalFeesUsed
-     *
      * @param batches Array of BatchClaim structs, one per destination chain
      */
     function batchMultichainPost(BatchClaim[] memory batches) public payable virtual {
-        // this just loops through the batches and calls batchPost for each
+        // Validate inputs
+        require(batches.length > 0, "Empty batches array");
 
-        // might need to make an internal function for batchPost for refund behavior
+        // Loop through batches and call _batchPost for each
+        unchecked {
+            for (uint256 i = 0; i < batches.length; ++i) {
+                BatchClaim memory batch = batches[i];
+
+                // Call internal _batchPost which doesn't refund
+                _batchPost(batch.chainId, batch.claimHashes);
+            }
+        }
+
+        // Refund entire remaining balance once at the end (router pattern)
+        uint256 toRefund = address(this).balance;
+        if (toRefund > 0) {
+            msg.sender.safeTransferETH(toRefund);
+        }
     }
 
     /**
