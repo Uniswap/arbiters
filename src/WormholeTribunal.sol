@@ -279,7 +279,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     }
 
     // ========================================================================
-    // ============ CLAIM CHAIN: Receive & Execute ============================
+    // ============ CLAIM CHAIN: Self Relayed Functions =======================
     // ========================================================================
 
     /**
@@ -335,19 +335,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @dev Handles SINGLE_SEND and BATCH_SEND message types via automatic relay
      * @dev Message authentication is guaranteed by the Wormhole relayer before reaching this function
      * @dev See "lib/wormhole-solidity-sdk/src/interfaces/IWormholeReceiver.sol" for interface details
-     *
-     * Current implementation: Handles SINGLE_SEND messages only
-     *
-     * TODO: Add BATCH_SEND support:
-     * 1. Check first byte of payload for MessagePackingType
-     * 2. If MessagePackingType == SINGLE_SEND (or no type byte for backwards compatibility):
-     *    - Use existing decode logic (payload.decode())
-     *    - Call _sendClaim() once
-     * 3. If MessagePackingType == BATCH_SEND:
-     *    - Decode batch using Message.decodeBatchSend(payload)
-     *    - Loop through each MessageData in the batch
-     *    - Call _sendClaim() for each message
-     * 4. Emit appropriate events for batch processing
      */
     function receiveWormholeMessages(
         bytes calldata payload,
@@ -424,6 +411,10 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
             }
         }
     }
+
+    // ========================================================================
+    // ============ CLAIM CHAIN: Shared Functions =============================
+    // ========================================================================
 
     /**
      * @notice Internal function to construct and submit a batch claim to The Compact
