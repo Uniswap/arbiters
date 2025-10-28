@@ -99,7 +99,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     }
 
     // ========================================================================
-    // ============ FILL CHAIN: Single Message Operations ====================
+    // ============ FILL CHAIN: Single Message Operations =====================
     // ========================================================================
 
     /**
@@ -189,6 +189,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         virtual
         returns (uint64 sequence)
     {
+        // TODO: add claimhash validation here
+
         bytes memory encodedBatch = Message.encodeBatchSend(messages);
 
         encodedBatch = abi.encodePacked(uint8(MessagePackingType.BATCH_SEND), encodedBatch); // Prepend message type for routing on claim chain
