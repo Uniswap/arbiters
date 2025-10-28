@@ -74,6 +74,22 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     }
 
     // ========================================================================
+    // =========================== internal helpers ===========================
+    // ========================================================================
+
+    /**
+     * @notice Refunds any remaining ETH balance to msg.sender
+     * @dev Uses the router pattern - refunds entire contract balance after operations
+     */
+    function _refundExcessETH() internal {
+        uint256 toRefund = address(this).balance;
+        if (toRefund > 0) {
+            (bool success,) = msg.sender.call{value: toRefund}("");
+            require(success, "ETH refund failed");
+        }
+    }
+
+    // ========================================================================
     // =========================== destination side ==========================
     // ========================================================================
 
@@ -145,11 +161,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         );
 
         // Refund entire remaining balance (router pattern)
-        uint256 toRefund = balanceBeforeFee - dispensation;
-        if (toRefund > 0) {
-            (bool success,) = msg.sender.call{value: toRefund}("");
-            require(success, "ETH refund failed");
-        }
+        _refundExcessETH();
     }
 
     // _post -> we include all the data needed to process the message
@@ -186,11 +198,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         );
 
         // Refund entire remaining balance (router pattern)
-        uint256 toRefund = balanceBeforeFee - wormholeFee;
-        if (toRefund > 0) {
-            (bool success,) = msg.sender.call{value: toRefund}("");
-            require(success, "ETH refund failed");
-        }
+        _refundExcessETH();
     }
 
     /**
@@ -245,11 +253,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         _batchSend(chainId, messages, gasLimit);
 
         // Refund entire remaining balance (router pattern)
-        uint256 toRefund = address(this).balance;
-        if (toRefund > 0) {
-            (bool success,) = msg.sender.call{value: toRefund}("");
-            require(success, "ETH refund failed");
-        }
+        _refundExcessETH();
     }
 
     /**
@@ -296,11 +300,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         sequence = _batchPost(chainId, claimHashes);
 
         // Refund entire remaining balance (router pattern)
-        uint256 toRefund = address(this).balance;
-        if (toRefund > 0) {
-            (bool success,) = msg.sender.call{value: toRefund}("");
-            require(success, "ETH refund failed");
-        }
+        _refundExcessETH();
     }
 
     /**
@@ -323,11 +323,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         }
 
         // Refund entire remaining balance once at the end (router pattern)
-        uint256 toRefund = address(this).balance;
-        if (toRefund > 0) {
-            (bool success,) = msg.sender.call{value: toRefund}("");
-            require(success, "ETH refund failed");
-        }
+        _refundExcessETH();
     }
 
     /**
@@ -352,11 +348,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         }
 
         // Refund entire remaining balance once at the end (router pattern)
-        uint256 toRefund = address(this).balance;
-        if (toRefund > 0) {
-            (bool success,) = msg.sender.call{value: toRefund}("");
-            require(success, "ETH refund failed");
-        }
+        _refundExcessETH();
     }
 
 
