@@ -253,7 +253,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @dev Loops through chains calling _batchPost(), refunds once at the end
      * @return sequences Array of Wormhole message sequence numbers
      */
-    function batchMultichainPost(BatchPost[] calldata batches)
+    function batchMultichainPost(BatchPost[] memory batches)
         public
         payable
         virtual
@@ -263,7 +263,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         sequences = new uint64[](batches.length);
         unchecked {
             for (uint256 i = 0; i < batches.length; ++i) {
-                sequences[i] = _batchPost(batches[i].chainId, batches[i].claimHashes);
+                BatchPost memory batch = batches[i];
+                sequences[i] = _batchPost(batch.chainId, batch.claimHashes);
             }
         }
     }
