@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
 import {BatchCompact} from "the-compact/src/types/EIP712Types.sol";
-import {SendData} from "../types/BatchTypes.sol";
+import {SendData} from "../types/WormholeTypes.sol";
 
 library Message {
     uint8 constant HAS_ALLOCATOR_SIG = 0x01;

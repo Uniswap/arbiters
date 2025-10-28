@@ -19,59 +19,14 @@ import {WormholeMappings} from "./libraries/WormholeMappings.sol";
 import {Message} from "./libraries/Message.sol";
 
 //type imports
-import {SendData} from "./types/BatchTypes.sol";
+import {MessagePackingType, SendData, BatchPost, BatchSend} from "./types/WormholeTypes.sol";
 
 /**
  * @title WormholeTribunal
  * @notice Cross-chain message bridge for The Compact using Wormhole infrastructure
  * @dev Implements bidirectional message flow between fill chains and claim chains
- *
- * ARCHITECTURE OVERVIEW:
- * =====================
- *
- * Two-Sided Message Flow:
- * -----------------------
- * 1. FILL CHAIN (Sending Side):
- *    - Where fillers provide liquidity to users
- *    - Messages are SENT from here to the claim chain
- *    - Functions: _quoteDirective(), _processDirective(), batchSend(), batchPost()
- *
- * 2. CLAIM CHAIN (Receiving Side):
- *    - Where The Compact holds locked tokens
- *    - Messages are RECEIVED here and claims are executed
- *    - Functions: receiveWormholeMessages(), receiveMessage(), _sendClaim()
- *
- * Message Flow Example:
- * --------------------
- *   Fill Chain                              Claim Chain
- *   ----------                              -----------
- *   User gets tokens    ──────────────→    Tokens locked in Compact
- *        ↓                                         ↓
- *   Filler fills order                       Execute claim
- *        ↓                                         ↓
- *   _processDirective() ──(Wormhole)────→   receiveWormholeMessages()
- *                                                  ↓
- *                                            _sendClaim()
- *                                                  ↓
- *                                            THE_COMPACT.batchClaim()
- *
- * Four Message Types:
- * ------------------
- * 1. SINGLE_POST: Single message via wormhole.publishMessage() (user self-relay with VAA)
- * 2. SINGLE_SEND: Single message via wormholeRelayer.sendPayloadToEvm() (automatic relay)
- * 3. BATCH_POST: Multiple messages via wormhole.publishMessage() (user self-relay with VAA)
- * 4. BATCH_SEND: Multiple messages via wormholeRelayer.sendPayloadToEvm() (automatic relay)
- *
- * POST vs SEND:
- * ------------
- * - POST: User pays gas on claim chain to relay VAA themselves (cheaper, async)
- * - SEND: Filler pays relayer to automatically deliver message (expensive, automatic)
- *
- * Inheritance:
- * -----------
- * - IWormholeReceiver: Enables receiving automatic relayed messages
- * - Tribunal: Base contract providing _quoteDirective() and _processDirective() hooks
  */
+
 contract WormholeTribunal is IWormholeReceiver, Tribunal {
     using Message for bytes;
 
@@ -88,61 +43,28 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     }
 
     // ========================================================================
-    // =========================== type definitions ===========================
-    // ========================================================================
-
-    /**
-     * @notice Enum to distinguish between different message packing types
-     * @dev Used to determine how messages are encoded and transmitted
-     */
-    enum MessagePackingType {
-        SINGLE_POST, // 0
-        SINGLE_SEND, // 1
-        BATCH_POST, // 2
-        BATCH_SEND // 3
-    }
-
-    /**
-     * @notice Represents a batch of claim hashes for a single destination chain
-     * @dev Used for BATCH_POST operations where only claim hashes are transmitted
-     */
-    struct BatchPost {
-        uint256 chainId;
-        bytes32[] claimHashes;
-    }
-
-    /**
-     * @notice Represents a batch of full message data for a single destination chain
-     * @dev Used for BATCH_SEND operations where complete SendData is transmitted
-     */
-    struct BatchSend {
-        uint256 chainId;
-        SendData[] messages;
-    }
-
-    // ========================================================================
     // =========================== internal helpers ===========================
     // ========================================================================
-
-    /**
-     * @notice Refunds any remaining ETH balance to msg.sender
-     * @dev Uses the router pattern - refunds entire contract balance after operations
-     */
-    function _refundExcessETH() internal {
-        uint256 toRefund = address(this).balance;
-        if (toRefund > 0) {
-            (bool success,) = msg.sender.call{value: toRefund}("");
-            require(success, "ETH refund failed");
-        }
-    }
 
     /**
      * @notice Modifier to automatically refund excess ETH after function execution
      * @dev Follows the router pattern - refunds entire contract balance to msg.sender
      */
-    modifier refundExcessETH() {
+    modifier refundExcessEth() {
         _;
-        _refundExcessETH();
+        _refundExcessEth();
+    }
+
+    /**
+     * @notice Internal function to refund excess ETH to msg.sender
+     * @dev Refunds entire contract balance to msg.sender
+     */
+    function _refundExcessEth() internal {
+        uint256 toRefund = address(this).balance;
+        if (toRefund > 0) {
+            (bool success,) = msg.sender.call{value: toRefund}("");
+            require(success, "ETH refund failed");
+        }
     }
 
     /**
@@ -170,6 +92,15 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         require(address(this).balance >= dispensation, "Insufficient ETH for wormhole relayer fee");
 
         WORMHOLE_RELAYER.sendPayloadToEvm{value: dispensation}(wormholeChainId, address(this), payload, 0, gasLimit);
+    }
+
+    /**
+     * @notice Validates that a message came from the corresponding tribunal on another chain
+     * @dev Checks that the emitter address matches this contract's address (deterministic across chains)
+     * @param emitter The address of the message emitter to validate
+     */
+    function _validateTribunalAddress(address emitter) internal view {
+        require(emitter == address(this), "Message not from corresponding tribunal");
     }
 
     // ========================================================================
@@ -209,11 +140,11 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes32 claimant,
         uint256[] memory claimAmounts,
         uint256 /*unused target block*/
-    ) internal virtual override refundExcessETH {
+    ) internal virtual override refundExcessEth {
         bytes memory message =
             Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts);
 
-        //todo need to append the MessagePackingType.SINGLE_SEND to the message
+        //TODO need to append the MessagePackingType.SINGLE_SEND to the message
 
         uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId);
 
@@ -233,7 +164,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes32 mandateHash,
         bytes32 claimant,
         uint256[] memory claimAmounts
-    ) internal refundExcessETH returns (uint64 messageSequence) {
+    ) internal refundExcessEth returns (uint64 messageSequence) {
         // Encode the message with all data for filler convenience
         bytes memory message =
             Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts);
@@ -254,7 +185,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         public
         payable
         virtual
-        refundExcessETH
+        refundExcessEth
     {
         _batchSend(chainId, messages, gasLimit);
     }
@@ -288,7 +219,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         public
         payable
         virtual
-        refundExcessETH
+        refundExcessEth
         returns (uint64 sequence)
     {
         sequence = _batchPost(chainId, claimHashes);
@@ -314,7 +245,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Posts batches of claim hashes to multiple chains via core (multichain BATCH_POST)
      * @dev Loops through chains calling _batchPost(), refunds once at the end
      */
-    function batchMultichainPost(BatchPost[] memory batches) public payable virtual refundExcessETH {
+    function batchMultichainPost(BatchPost[] memory batches) public payable virtual refundExcessEth {
         // Loop through batches and call _batchPost for each
         unchecked {
             for (uint256 i = 0; i < batches.length; ++i) {
@@ -334,7 +265,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         public
         payable
         virtual
-        refundExcessETH
+        refundExcessEth
     {
         require(batches.length == gasLimits.length, "Batches and gasLimits length mismatch");
 
@@ -386,10 +317,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         // do not need to check chainID since tribunal address is deterministic for each chain
         // although, we might want to check the set of chainIDs in case an underlying
         // chain is compromised
-        require(
-            address(uint160(uint256(wormholeMessage.emitterAddress))) == address(this),
-            "Message not from corresponding tribunal"
-        );
+        _validateTribunalAddress(address(uint160(uint256(wormholeMessage.emitterAddress))));
 
         // TODO: Decode message / additionalData based on message type (wormholeMessage.nonce)
         // - Check nonce to determine if SINGLE_POST or BATCH_POST
@@ -429,7 +357,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         require(msg.sender == address(WORMHOLE_RELAYER), "Only the Wormhole relayer can call this function");
 
         // Check that the source address is the tribunal's on the source chain
-        require(address(uint160(uint256(sourceAddress))) == address(this), "Message not from corresponding tribunal");
+        _validateTribunalAddress(address(uint160(uint256(sourceAddress))));
 
         // TODO: Check first byte of payload for MessagePackingType to determine if batch
         // For now, assume SINGLE_SEND and decode as single message
