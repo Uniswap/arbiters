@@ -89,6 +89,24 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         }
     }
 
+    /**
+     * @notice Publishes a message via Wormhole core contract
+     * @dev Handles fee calculation, balance validation, and message publishing
+     * @param nonce The nonce value (typically MessagePackingType cast to uint32)
+     * @param payload The message payload to publish
+     * @return sequence The Wormhole message sequence number
+     */
+    function _publishMessage(uint32 nonce, bytes memory payload) internal returns (uint64 sequence) {
+        uint256 fee = WORMHOLE.messageFee();
+        require(address(this).balance >= fee, "Insufficient ETH for wormhole fee");
+
+        sequence = WORMHOLE.publishMessage{value: fee}(
+            nonce,
+            payload,
+            CONSISTENCY_LEVEL
+        );
+    }
+
     // ========================================================================
     // =========================== destination side ==========================
     // ========================================================================
@@ -174,7 +192,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes32 claimant,
         uint256[] memory claimAmounts
     ) internal returns (uint64 messageSequence) {
-        
+
         // Encode the message with all data for filler convenience
         bytes memory message = Message.encode(
             compact,
@@ -185,17 +203,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
             claimAmounts
         );
 
-        uint256 wormholeFee = WORMHOLE.messageFee();
-        
-        // Capture balance before paying fee (includes any remaining msg.value from upstream + forced ETH)
-        uint256 balanceBeforeFee = address(this).balance;
-        require(balanceBeforeFee >= wormholeFee, "Insufficient ETH for wormhole fee");
-
-        messageSequence = WORMHOLE.publishMessage{value: wormholeFee}(
-            uint32(MessagePackingType.SINGLE_POST),
-            message,
-            CONSISTENCY_LEVEL
-        );
+        // Publish message via Wormhole core
+        messageSequence = _publishMessage(uint32(MessagePackingType.SINGLE_POST), message);
 
         // Refund entire remaining balance (router pattern)
         _refundExcessETH();
@@ -274,18 +283,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         // Enforce max message size
         require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
 
-        // Get the Wormhole message fee
-        uint256 fee = WORMHOLE.messageFee();
-
-        // Validate sufficient balance
-        require(address(this).balance >= fee, "Insufficient ETH for wormhole fee");
-
-        // Publish message with MessagePackingType.BATCH_POST as nonce
-        sequence = WORMHOLE.publishMessage{value: fee}(
-            uint32(MessagePackingType.BATCH_POST),
-            encodedBatch,
-            CONSISTENCY_LEVEL
-        );
+        // Publish message via Wormhole core
+        sequence = _publishMessage(uint32(MessagePackingType.BATCH_POST), encodedBatch);
     }
 
     /**
