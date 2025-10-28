@@ -206,39 +206,48 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Sends a batch of full message data to a single destination chain with automatic relay
      * @dev Uses wormholeRelayer.sendPayloadToEvm() with MessagePackingType encoded in payload
-     *
-     * Implementation steps:
-     * 1. Encode the batch using Message.encodeBatchSend(chainId, messages)
-     *    - This includes MessagePackingType.BATCH_SEND as first byte of payload
-     * 2. Convert chainId to Wormhole format: WormholeMappings.toWormholeId(chainId)
-     * 3. Calculate cost: wormholeRelayer.quoteEVMDeliveryPrice(wormholeChainId, 0, GAS_LIMIT)
-     * 4. Validate msg.value >= cost
-     * 5. Call wormholeRelayer.sendPayloadToEvm{value: cost}(
-     *      wormholeChainId,
-     *      address(this),  // target address on destination chain
-     *      encodedBatch,
-     *      0,              // no receiver value
-     *      GAS_LIMIT
-     *    )
-     *
      * @param chainId The destination chain ID
      * @param messages Array of SendData structs containing full claim information
+     * @param gasLimit The gas limit for execution on the destination chain
      */
-    function batchSend(uint256 chainId, SendData[] memory messages) public payable virtual {
-
-        // enforce a max size for the arbitrary message
+    function batchSend(uint256 chainId, SendData[] memory messages, uint256 gasLimit) public payable virtual {
+        // Validate inputs
+        require(chainId != 0, "Invalid chainId");
+        require(messages.length > 0, "Empty messages array");
+        require(gasLimit > 0, "Invalid gas limit");
 
         // Encode the batch using Message.encodeBatchSend(chainId, messages)
+        bytes memory encodedBatch = Message.encodeBatchSend(chainId, messages);
 
-        // Convert chainId to Wormhole format: WormholeMappings.toWormholeId(chainId)
+        //todo need to append the MessagePackingType.BATCH_SEND to the encodedBatch
 
-        // Calculate cost: wormholeRelayer.quoteEVMDeliveryPrice(wormholeChainId, 0, GAS_LIMIT)
+        // Enforce max message size
+        require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
+
+        // Convert chainId to Wormhole format
+        uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId);
+
+        // Calculate cost: wormholeRelayer.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit)
+        (uint256 dispensation, ) = wormholeRelayer.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit);
 
         // Capture balance before sending (includes any remaining msg.value from upstream + forced ETH)
+        uint256 balanceBeforeFee = address(this).balance;
+        require(balanceBeforeFee >= dispensation, "Insufficient ETH for wormhole relayer fee");
 
-        //wormholeRelayer.sendPayloadToEvm{value: dispensation}
+        // Send the batch via wormholeRelayer.sendPayloadToEvm
+        wormholeRelayer.sendPayloadToEvm{value: dispensation}(
+            wormholeChainId,
+            address(this),
+            encodedBatch,
+            0,
+            gasLimit
+        );
 
         // Refund entire remaining balance (router pattern)
+        uint256 toRefund = balanceBeforeFee - dispensation;
+        if (toRefund > 0) {
+            msg.sender.safeTransferETH(toRefund);
+        }
     }
 
 
