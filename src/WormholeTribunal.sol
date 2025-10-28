@@ -283,47 +283,94 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     // ========================================================================
 
     /**
-     * @notice Receives and processes POST messages relayed by users via VAA
-     * @dev Handles SINGLE_POST and BATCH_POST message types via user self-relay with VAA
-     *
-     * Implementation steps:
-     * 1. Parse and verify the VAA using wormhole.parseAndVerifyVM(encodedVAA)
-     * 2. Validate the message is from the corresponding tribunal on source chain
-     * 3. Extract nonce from wormholeMessage.nonce to get MessagePackingType
-     * 4. If nonce == SINGLE_POST:
-     *    - Decode single claim hash from payload
-     *    - Process single claim using additionalData (which contains full SendData)
-     * 5. If nonce == BATCH_POST:
-     *    - Decode batch of claim hashes using Message.decodeBatchPost()
-     *    - Process each claim using corresponding entry in additionalData array
-     * 6. Emit appropriate events
-     *
-     * @return messageSequence The sequence number of the processed message
+     * @notice Receives and processes a single POST message relayed by user via VAA
+     * @dev Handles SINGLE_POST message type via user self-relay with VAA
+     * @param encodedVaa The encoded VAA from Wormhole
+     * @param additionalData The full SendData needed to process the claim
+     * @return sequence The Wormhole message sequence number
      */
-    function receiveMessage(bytes memory encodedVaa, bytes memory additionalData)
+    function receiveSinglePost(bytes memory encodedVaa, SendData calldata additionalData)
         public
         payable
-        returns (uint64 messageSequence)
+        returns (uint64 sequence)
     {
-        // call the Wormhole core contract to parse and verify the encodedVAA
-        (IWormhole.VM memory wormholeMessage, bool valid, string memory reason) = WORMHOLE.parseAndVerifyVM(encodedVaa);
+        // Parse and validate VAA
+        (IWormhole.VM memory vm, uint64 seq) = _parseAndValidateVAA(encodedVaa, MessagePackingType.SINGLE_POST);
+        sequence = seq;
 
-        // confirm that the Wormhole core contract verified the message
+        // Extract claim hash from payload
+        bytes32 claimHash = bytes32(vm.payload);
+
+        // Process the claim
+        _receiveSinglePost(claimHash, additionalData);
+    }
+
+    /**
+     * @notice Receives and processes a batch POST message relayed by user via VAA
+     * @dev Handles BATCH_POST message type via user self-relay with VAA
+     * @param encodedVaa The encoded VAA from Wormhole
+     * @param additionalData Array of full SendData needed to process each claim
+     * @return sequence The Wormhole message sequence number
+     */
+    function receiveBatchPost(bytes memory encodedVaa, SendData[] calldata additionalData)
+        public
+        payable
+        returns (uint64 sequence)
+    {
+        // Parse and validate VAA
+        (IWormhole.VM memory vm, uint64 seq) = _parseAndValidateVAA(encodedVaa, MessagePackingType.BATCH_POST);
+        sequence = seq;
+
+        // Decode batch from payload
+        (bytes32[] memory claimants, bytes32[] memory claimHashes) = Message.decodeBatchPost(vm.payload);
+
+        // Process the batch
+        _receiveBatchPost(claimants, claimHashes, additionalData);
+    }
+
+    /**
+     * @notice Internal handler for single POST messages
+     * @dev TODO: Verify claim hash and call _sendClaim()
+     */
+    function _receiveSinglePost(bytes32 claimHash, SendData calldata data) internal {
+        // TODO: Compute claim hash from data and verify it matches claimHash (might not need this because self relaying)
+        // TODO: Call _sendClaim() with decoded data
+    }
+
+    /**
+     * @notice Internal handler for batch POST messages
+     * @dev TODO: Verify claim hashes and call _sendClaim() for each
+     */
+    function _receiveBatchPost(bytes32[] memory claimants, bytes32[] memory claimHashes, SendData[] calldata data)
+        internal
+    {
+        // TODO: For each claim, compute hash from data and verify it matches
+        // TODO: Call _sendClaim() for each verified claim
+    }
+
+    /**
+     * @notice Shared internal function to parse and validate VAA
+     * @dev Extracts common validation logic for both single and batch POST receivers
+     * @return vm The parsed Wormhole VM message
+     * @return sequence The message sequence number
+     */
+    function _parseAndValidateVAA(bytes memory encodedVaa, MessagePackingType expectedType)
+        internal
+        returns (IWormhole.VM memory vm, uint64 sequence)
+    {
+        // Parse and verify the VAA
+        bool valid;
+        string memory reason;
+        (vm, valid, reason) = WORMHOLE.parseAndVerifyVM(encodedVaa);
         require(valid, reason);
 
-        // Check that the source address is the tribunal's on the source chain
-        // do not need to check chainID since tribunal address is deterministic for each chain
-        // although, we might want to check the set of chainIDs in case an underlying
-        // chain is compromised
-        _validateTribunalAddress(address(uint160(uint256(wormholeMessage.emitterAddress))));
+        // Validate tribunal address
+        _validateTribunalAddress(address(uint160(uint256(vm.emitterAddress))));
 
-        // TODO: Decode message / additionalData based on message type (wormholeMessage.nonce)
-        // - verify against claim hash
-        // - Check nonce to determine if SINGLE_POST or BATCH_POST
-        // - Decode payload accordingly using Message library functions
-        // - Extract claim data from additionalData
-        // - Call _sendClaim() for each claim
-        // - Return the sequence number from wormholeMessage.sequence
+        // Verify message type matches expected
+        require(MessagePackingType(vm.nonce) == expectedType, "Invalid message type");
+
+        sequence = vm.sequence;
     }
 
     // ========================================================================
