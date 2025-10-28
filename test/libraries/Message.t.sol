@@ -686,10 +686,7 @@ contract MessageTest is Test {
         bytes memory emptySig = "";
         bytes memory encoded = wrapper.encode(compact, emptySig, ALLOCATOR_SIG, MANDATE_HASH, CLAIMANT, claimAmounts);
 
-        (,,,
-            bytes memory decodedAllocatorSig,
-            bytes memory decodedSponsorSig,,
-        ) = wrapper.decode(encoded);
+        (,,, bytes memory decodedAllocatorSig, bytes memory decodedSponsorSig,,) = wrapper.decode(encoded);
 
         assertEq(decodedAllocatorSig, ALLOCATOR_SIG, "Allocator signature should match");
         assertEq(decodedSponsorSig.length, 0, "Sponsor signature should be empty");
@@ -710,10 +707,7 @@ contract MessageTest is Test {
         bytes memory emptySig = "";
         bytes memory encoded = wrapper.encode(compact, SPONSOR_SIG, emptySig, MANDATE_HASH, CLAIMANT, claimAmounts);
 
-        (,,,
-            bytes memory decodedAllocatorSig,
-            bytes memory decodedSponsorSig,,
-        ) = wrapper.decode(encoded);
+        (,,, bytes memory decodedAllocatorSig, bytes memory decodedSponsorSig,,) = wrapper.decode(encoded);
 
         assertEq(decodedAllocatorSig.length, 0, "Allocator signature should be empty");
         assertEq(decodedSponsorSig, SPONSOR_SIG, "Sponsor signature should match");

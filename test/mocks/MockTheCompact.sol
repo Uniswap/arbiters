@@ -14,5 +14,4 @@ contract MockTheCompact {
         latestClaimHash = claimHash;
         return latestClaimHash;
     }
-
 }

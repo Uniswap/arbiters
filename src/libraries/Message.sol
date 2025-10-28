@@ -124,7 +124,7 @@ library Message {
 
             // Calculate variable offsets based on flags
             uint256 offset = 137;
-            
+
             if ((flags & HAS_ALLOCATOR_SIG) != 0) {
                 require(messageLength >= offset + 64, "message too short for allocator signature");
                 allocatorSignature = message[offset:offset + 64];
@@ -170,81 +170,79 @@ library Message {
     }
 
     /**
-    * @notice Encodes a batch of claim hashes for BATCH_POST operations
-    * @dev Lightweight encoding for user self-relay via wormhole.publishMessage()
-    * Format: length (32 bytes) | claimant1 (32) | claimHash1 (32) | claimant2 (32) | claimHash2 (32) | ...
-    */
+     * @notice Encodes a batch of claim hashes for BATCH_POST operations
+     * @dev Lightweight encoding for user self-relay via wormhole.publishMessage()
+     * Format: length (32 bytes) | claimant1 (32) | claimHash1 (32) | claimant2 (32) | claimHash2 (32) | ...
+     */
     //TODO: add exact out here with scaling factor
-    function encodeBatchPost(
-        bytes32[] memory claimants,
-        bytes32[] memory claimHashes
-    ) internal pure returns (bytes memory) {
+    function encodeBatchPost(bytes32[] memory claimants, bytes32[] memory claimHashes)
+        internal
+        pure
+        returns (bytes memory)
+    {
         uint256 length = claimants.length;
         require(length == claimHashes.length, "array length mismatch");
-        
+
         // 32 bytes for length + (32 + 32) * length for each pair
         bytes memory result = new bytes(32 + (length * 64));
-        
+
         assembly ("memory-safe") {
             let ptr := add(result, 32)
-            
+
             // Encode length
             mstore(ptr, length)
             ptr := add(ptr, 32)
-            
+
             // Encode each claimant|claimHash pair
             let claimantsPtr := add(claimants, 32)
             let hashesPtr := add(claimHashes, 32)
-            
+
             for { let i := 0 } lt(i, length) { i := add(i, 1) } {
                 // Store claimant (32 bytes)
                 mstore(ptr, mload(add(claimantsPtr, mul(i, 32))))
                 ptr := add(ptr, 32)
-                
+
                 // Store claimHash (32 bytes)
                 mstore(ptr, mload(add(hashesPtr, mul(i, 32))))
                 ptr := add(ptr, 32)
             }
         }
-        
+
         return result;
     }
 
     /**
-    * @notice Decodes a batch of claim hashes from BATCH_POST message payload
-    * @dev Inverse of encodeBatchPost()
-    */
+     * @notice Decodes a batch of claim hashes from BATCH_POST message payload
+     * @dev Inverse of encodeBatchPost()
+     */
     //TODO: add exact out here with scaling factor
     function decodeBatchPost(bytes calldata message)
         internal
         pure
-        returns (
-            bytes32[] memory claimants,
-            bytes32[] memory claimHashes
-        )
+        returns (bytes32[] memory claimants, bytes32[] memory claimHashes)
     {
         require(message.length >= 32, "message too short");
-        
+
         uint256 length;
         assembly ("memory-safe") {
             length := calldataload(message.offset)
         }
-        
+
         require(message.length == 32 + (length * 64), "invalid message length");
-        
+
         claimants = new bytes32[](length);
         claimHashes = new bytes32[](length);
-        
+
         assembly ("memory-safe") {
             let offset := add(message.offset, 32)
             let claimantsPtr := add(claimants, 32)
             let hashesPtr := add(claimHashes, 32)
-            
+
             for { let i := 0 } lt(i, length) { i := add(i, 1) } {
                 // Load claimant (32 bytes)
                 mstore(add(claimantsPtr, mul(i, 32)), calldataload(offset))
                 offset := add(offset, 32)
-                
+
                 // Load claimHash (32 bytes)
                 mstore(add(hashesPtr, mul(i, 32)), calldataload(offset))
                 offset := add(offset, 32)
@@ -252,63 +250,110 @@ library Message {
         }
     }
 
-
     /**
      * @notice Encodes a batch of full SendData for BATCH_SEND operations
      * @dev Full encoding for automatic relay via wormholeRelayer.sendPayloadToEvm()
-     *
-     * Note: MessagePackingType is included in payload (not nonce) because
-     * sendPayloadToEvm() doesn't have a nonce parameter
-     *
-     * @param chainId The destination chain ID
+     * Format: count (32 bytes) | length1 (32) | message1 (variable) | length2 (32) | message2 (variable) | ...
      * @param messages Array of SendData structs to encode
      * @return Encoded bytes ready for wormholeRelayer.sendPayloadToEvm()
      */
-    function encodeBatchSend(
-        uint256 chainId,
-        SendData[] memory messages
-    ) internal pure returns (bytes memory) {
-        // TODO: implement encoding logic
-        // Format: MessagePackingType | chainId | length | message1 | message2 | ...
-        // Each message uses the existing encode() function logic
+    function encodeBatchSend(SendData[] calldata messages) internal pure returns (bytes memory) {
+        bytes memory result = abi.encodePacked(uint256(messages.length));
+
+        unchecked {
+            for (uint256 i = 0; i < messages.length; ++i) {
+                SendData calldata data = messages[i];
+                bytes memory encoded = encode(
+                    data.compact,
+                    data.sponsorSignature,
+                    data.allocatorSignature,
+                    data.mandateHash,
+                    data.claimant,
+                    data.claimAmounts
+                );
+                result = abi.encodePacked(result, encoded.length, encoded);
+            }
+        }
+
+        return result;
     }
 
     /**
      * @notice Decodes a batch of SendData from BATCH_SEND message payload
      * @dev Inverse of encodeBatchSend()
-     *
-     * Format: MessagePackingType (1 byte) | chainId (32 bytes) | array length (32 bytes) | SendData[]
-     *
-     * Implementation steps:
-     * 1. Validate message length >= 65 bytes (minimum for type + chainId + length)
-     * 2. Decode and validate MessagePackingType at offset 0 (should be BATCH_SEND)
-     * 3. Decode chainId from offset 1 (32 bytes)
-     * 4. Decode array length from offset 33 (32 bytes)
-     * 5. Create SendData array of decoded length
-     * 6. Track current offset starting at 65
-     * 7. Loop through messages:
-     *    - For each message, calculate the message size based on flags
-     *    - Extract message slice from current offset
-     *    - Decode using existing decode() logic or inline decoding
-     *    - Store decoded SendData in array
-     *    - Update offset by message size
-     * 8. Return chainId and messages array
-     *
      * @param message The encoded message bytes from wormholeRelayer.sendPayloadToEvm()
-     * @return chainId The destination chain ID
-     * @return messages Array of decoded SendData structs
+     * @return sponsors Array of sponsor addresses
+     * @return nonces Array of nonces
+     * @return expires Array of expiration timestamps
+     * @return allocatorSignatures Array of allocator signatures
+     * @return sponsorSignatures Array of sponsor signatures
+     * @return witnesses Array of witness hashes
+     * @return claims Array of claim components
      */
     function decodeBatchSend(bytes calldata message)
         internal
-        pure
+        view
         returns (
-            uint256 chainId,
-            SendData[] memory messages
+            address[] memory sponsors,
+            uint256[] memory nonces,
+            uint256[] memory expires,
+            bytes[] memory allocatorSignatures,
+            bytes[] memory sponsorSignatures,
+            bytes32[] memory witnesses,
+            BatchClaimComponent[][] memory claims
         )
     {
-        // TODO: implement decoding logic
-        // Format: MessagePackingType | chainId | length | message1 | message2 | ...
-        // Each message needs to be decoded using logic similar to existing decode()
-    }
+        require(message.length >= 32, "message too short");
 
+        uint256 count;
+        assembly ("memory-safe") {
+            count := calldataload(message.offset)
+        }
+
+        sponsors = new address[](count);
+        nonces = new uint256[](count);
+        expires = new uint256[](count);
+        allocatorSignatures = new bytes[](count);
+        sponsorSignatures = new bytes[](count);
+        witnesses = new bytes32[](count);
+        claims = new BatchClaimComponent[][](count);
+
+        uint256 offset = 32;
+        unchecked {
+            for (uint256 i = 0; i < count; ++i) {
+                require(message.length >= offset + 32, "message too short for length");
+
+                uint256 msgLength;
+                assembly ("memory-safe") {
+                    msgLength := calldataload(add(message.offset, offset))
+                }
+                offset += 32;
+
+                require(message.length >= offset + msgLength, "message too short for payload");
+
+                // Extract the message slice and decode
+                bytes calldata msgSlice = message[offset:offset + msgLength];
+
+                (
+                    address sponsor,
+                    uint256 nonce,
+                    uint256 expire,
+                    bytes calldata allocatorSignature,
+                    bytes calldata sponsorSignature,
+                    bytes32 witness,
+                    BatchClaimComponent[] memory claim
+                ) = decode(msgSlice);
+
+                sponsors[i] = sponsor;
+                nonces[i] = nonce;
+                expires[i] = expire;
+                allocatorSignatures[i] = allocatorSignature;
+                sponsorSignatures[i] = sponsorSignature;
+                witnesses[i] = witness;
+                claims[i] = claim;
+
+                offset += msgLength;
+            }
+        }
+    }
 }

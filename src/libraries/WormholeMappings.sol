@@ -6,10 +6,10 @@ library WormholeMappings {
     /// @dev Max 3 comparisons (~45 gas) for 4 chains
     function toWormholeId(uint256 evmChainId) internal pure returns (uint16) {
         if (evmChainId <= 130) {
-            if (evmChainId == 1) return 2;      // Ethereum
-            if (evmChainId == 130) return 44;   // Unichain
+            if (evmChainId == 1) return 2; // Ethereum
+            if (evmChainId == 130) return 44; // Unichain
         } else {
-            if (evmChainId == 8453) return 30;  // Base
+            if (evmChainId == 8453) return 30; // Base
             if (evmChainId == 42161) return 23; // Arbitrum
         }
         revert("Unsupported chain");
@@ -19,11 +19,11 @@ library WormholeMappings {
     /// @dev Max 3 comparisons (~45 gas) for 4 chains
     function toEvmId(uint16 wormholeChainId) internal pure returns (uint256) {
         if (wormholeChainId <= 23) {
-            if (wormholeChainId == 2) return 1;      // Ethereum
+            if (wormholeChainId == 2) return 1; // Ethereum
             if (wormholeChainId == 23) return 42161; // Arbitrum
         } else {
-            if (wormholeChainId == 30) return 8453;  // Base
-            if (wormholeChainId == 44) return 130;   // Unichain
+            if (wormholeChainId == 30) return 8453; // Base
+            if (wormholeChainId == 44) return 130; // Unichain
         }
         revert("Unsupported chain");
     }
@@ -32,10 +32,10 @@ library WormholeMappings {
     /// @dev Max 3 comparisons (~45 gas) for 4 chains
     function getWormhole(uint256 evmChainId) internal pure returns (address) {
         if (evmChainId <= 130) {
-            if (evmChainId == 1) return 0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B;      // Ethereum
-            if (evmChainId == 130) return 0xCa1D5a146B03f6303baF59e5AD5615ae0b9d146D;   // Unichain
+            if (evmChainId == 1) return 0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B; // Ethereum
+            if (evmChainId == 130) return 0xCa1D5a146B03f6303baF59e5AD5615ae0b9d146D; // Unichain
         } else {
-            if (evmChainId == 8453) return 0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6;  // Base
+            if (evmChainId == 8453) return 0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6; // Base
             if (evmChainId == 42161) return 0xa5f208e072434bC67592E4C49C1B991BA79BCA46; // Arbitrum
         }
         revert("Unsupported chain");
@@ -45,10 +45,10 @@ library WormholeMappings {
     /// @dev Max 3 comparisons (~45 gas) for 4 chains
     function getWormholeRelayer(uint256 evmChainId) internal pure returns (address) {
         if (evmChainId <= 130) {
-            if (evmChainId == 1) return 0x27428DD2d3DD32A4D7f7C497eAaa23130d894911;      // Ethereum
-            if (evmChainId == 130) return 0x27428DD2d3DD32A4D7f7C497eAaa23130d894911;   // Unichain
+            if (evmChainId == 1) return 0x27428DD2d3DD32A4D7f7C497eAaa23130d894911; // Ethereum
+            if (evmChainId == 130) return 0x27428DD2d3DD32A4D7f7C497eAaa23130d894911; // Unichain
         } else {
-            if (evmChainId == 8453) return 0x706F82e9bb5b0813501714Ab5974216704980e31;  // Base
+            if (evmChainId == 8453) return 0x706F82e9bb5b0813501714Ab5974216704980e31; // Base
             if (evmChainId == 42161) return 0x27428DD2d3DD32A4D7f7C497eAaa23130d894911; // Arbitrum
         }
         revert("Unsupported chain");

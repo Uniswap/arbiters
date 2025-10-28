@@ -21,8 +21,7 @@ error InvalidChainId(uint256 chainId);
 contract HyperlaneTribunal is Router, Tribunal {
     using Message for bytes;
 
-    constructor(address _mailbox) Router(_mailbox) {
-    }
+    constructor(address _mailbox) Router(_mailbox) {}
 
     /**
      * @notice Process the mandated directive (i.e. trigger settlement).
@@ -44,14 +43,8 @@ contract HyperlaneTribunal is Router, Tribunal {
         uint256[] memory claimAmounts,
         uint256 //unused target block
     ) internal virtual override {
-        bytes memory message = Message.encode(
-            compact,
-            sponsorSignature,
-            allocatorSignature,
-            mandateHash,
-            claimant,
-            claimAmounts
-        );
+        bytes memory message =
+            Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts);
 
         if (chainId > type(uint32).max) {
             revert InvalidChainId();
@@ -87,14 +80,7 @@ contract HyperlaneTribunal is Router, Tribunal {
     ) internal view virtual override returns (uint256 dispensation) {
         return _Router_quoteDispatch(
             uint32(chainId),
-            Message.encode(
-                compact,
-                sponsorSignature,
-                allocatorSignature,
-                mandateHash,
-                claimant,
-                claimAmounts
-            ),
+            Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts),
             "",
             address(hook)
         );
@@ -105,9 +91,11 @@ contract HyperlaneTribunal is Router, Tribunal {
         /*origin*/
         bytes32 sender,
         bytes calldata message
-    ) internal override {
-
-        // check to make sure the message is from the corresponding tribunal 
+    )
+        internal
+        override
+    {
+        // check to make sure the message is from the corresponding tribunal
         require(address(uint160(uint256(sender))) == address(this), "Message not from corresponding tribunal");
 
         // decode the message

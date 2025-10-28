@@ -8,10 +8,10 @@ import {BatchCompact} from "the-compact/src/types/EIP712Types.sol";
  * @dev Used to determine how messages are encoded and transmitted via Wormhole
  */
 enum MessagePackingType {
-    SINGLE_POST, // 0 - Single message via wormhole.publishMessage() (user self-relay with VAA)
-    SINGLE_SEND, // 1 - Single message via wormholeRelayer.sendPayloadToEvm() (automatic relay)
-    BATCH_POST, // 2 - Multiple messages via wormhole.publishMessage() (user self-relay with VAA)
-    BATCH_SEND // 3 - Multiple messages via wormholeRelayer.sendPayloadToEvm() (automatic relay)
+    SINGLE_SEND,
+    BATCH_SEND,
+    SINGLE_POST,
+    BATCH_POST
 }
 
 /**

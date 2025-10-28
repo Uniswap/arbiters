@@ -11,12 +11,10 @@ import {BatchCompact, Lock} from "the-compact/src/types/EIP712Types.sol";
 import {ITribunal} from "../lib/tribunal/src/interfaces/ITribunal.sol";
 import {MANDATE_TYPEHASH} from "../lib/tribunal/src/types/TribunalTypeHashes.sol";
 
-
 /// @dev This test is modeled after lib/tribunal/test/TribunalFilledTest.t.sol
 ///      and is modeled after https://github.com/wormhole-foundation/hello-wormhole/blob/main/test/HelloWormhole.t.sol
 
 contract WormholeTribunalTest is WormholeRelayerBasicTest {
-
     WormholeTribunal public tribunalSource;
     WormholeTribunal public tribunalTarget;
 
@@ -53,9 +51,9 @@ contract WormholeTribunalTest is WormholeRelayerBasicTest {
         bytes32 salt = bytes32(uint256(0x1234));
         tribunalSource = new WormholeTribunal{salt: salt}();
 
-        (sponsor,sponsorPrivateKey) = makeAddrAndKey("sponsor");
+        (sponsor, sponsorPrivateKey) = makeAddrAndKey("sponsor");
         (adjuster, adjusterPrivateKey) = makeAddrAndKey("adjuster");
-        (allocator,allocatorPrivateKey) = makeAddrAndKey("allocator");
+        (allocator, allocatorPrivateKey) = makeAddrAndKey("allocator");
 
         emptyPriceCurve = new uint256[](0);
 
@@ -71,10 +69,7 @@ contract WormholeTribunalTest is WormholeRelayerBasicTest {
         tribunalTarget = new WormholeTribunal{salt: salt}();
 
         address theCompactAddress = address(0x00000000000000171ede64904551eeDF3C6C9788);
-        deployCodeTo(
-            "MockTheCompact.sol:MockTheCompact",
-            theCompactAddress
-        );
+        deployCodeTo("MockTheCompact.sol:MockTheCompact", theCompactAddress);
         theCompactTarget = MockTheCompact(theCompactAddress);
     }
 
@@ -98,7 +93,6 @@ contract WormholeTribunalTest is WormholeRelayerBasicTest {
 
         Lock[] memory commitments = new Lock[](1);
         commitments[0] = Lock({lockTag: bytes12(0), token: address(0), amount: 1 ether});
-
 
         (uint8 v1, bytes32 r1, bytes32 s1) = vm.sign(sponsorPrivateKey, "sponsor signature");
         bytes memory sponsorSignature = toEIP2098(r1, s1, v1);
@@ -146,24 +140,25 @@ contract WormholeTribunalTest is WormholeRelayerBasicTest {
         // The actual claimHash will be computed in _fill using the mandateHash from _deriveMandateHash
         // We need to compute it the same way for the adjustment signature
         // The mandate hash typehash should match MANDATE_TYPEHASH from TribunalTypeHashes.sol
-        bytes32 actualMandateHash = keccak256(
-            abi.encode(MANDATE_TYPEHASH, adjuster, keccak256(abi.encodePacked(fillHashes)))
-        );
+        bytes32 actualMandateHash =
+            keccak256(abi.encode(MANDATE_TYPEHASH, adjuster, keccak256(abi.encodePacked(fillHashes))));
         bytes32 actualClaimHash = tribunalSource.deriveClaimHash(claim.compact, actualMandateHash);
 
         //get quote amount for cross-chain fill using quote function
-        uint256 quoteAmount = tribunalSource.quote(claim, fill, adjuster, adjustment, fillHashes, bytes32(uint256(uint160(address(this)))), adjustment.targetBlock);
+        uint256 quoteAmount = tribunalSource.quote(
+            claim,
+            fill,
+            adjuster,
+            adjustment,
+            fillHashes,
+            bytes32(uint256(uint160(address(this)))),
+            adjustment.targetBlock
+        );
 
         // Expect CrossChainFill event for cross-chain fills
         vm.expectEmit(true, true, true, true, address(tribunalSource));
         emit ITribunal.CrossChainFill(
-            claim.chainId,
-            sponsor,
-            address(this),
-            actualClaimHash,
-            1 ether,
-            claimAmounts,
-            adjustment.targetBlock
+            claim.chainId, sponsor, address(this), actualClaimHash, 1 ether, claimAmounts, adjustment.targetBlock
         );
 
         // Sign the adjustment with the actual claimHash that will be computed in _fill
@@ -182,9 +177,7 @@ contract WormholeTribunalTest is WormholeRelayerBasicTest {
 
         bytes32 domainSeparator = keccak256(
             abi.encode(
-                keccak256(
-                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-                ),
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256("Tribunal"),
                 keccak256("1"),
                 block.chainid,
@@ -198,7 +191,9 @@ contract WormholeTribunalTest is WormholeRelayerBasicTest {
 
         vm.recordLogs(); // record logs for the relayer to pick up
 
-        tribunalSource.fill{value: quoteAmount + 1 ether}(
+        tribunalSource.fill{
+            value: quoteAmount + 1 ether
+        }(
             claim,
             fill,
             adjuster,
@@ -216,5 +211,4 @@ contract WormholeTribunalTest is WormholeRelayerBasicTest {
 
         assertEq(theCompactTarget.latestClaimHash(), actualClaimHash);
     }
-
 }
