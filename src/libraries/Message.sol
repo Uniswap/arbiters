@@ -216,7 +216,7 @@ library Message {
      * @dev Inverse of encodeBatchPost()
      */
     //TODO: add exact out here with scaling factor
-    function decodeBatchPost(bytes calldata message)
+    function decodeBatchPost(bytes memory message)
         internal
         pure
         returns (bytes32[] memory claimants, bytes32[] memory claimHashes)
@@ -225,7 +225,7 @@ library Message {
 
         uint256 length;
         assembly ("memory-safe") {
-            length := calldataload(message.offset)
+            length := mload(add(message, 32))
         }
 
         require(message.length == 32 + (length * 64), "invalid message length");
@@ -234,17 +234,17 @@ library Message {
         claimHashes = new bytes32[](length);
 
         assembly ("memory-safe") {
-            let offset := add(message.offset, 32)
+            let offset := add(message, 64)
             let claimantsPtr := add(claimants, 32)
             let hashesPtr := add(claimHashes, 32)
 
             for { let i := 0 } lt(i, length) { i := add(i, 1) } {
                 // Load claimant (32 bytes)
-                mstore(add(claimantsPtr, mul(i, 32)), calldataload(offset))
+                mstore(add(claimantsPtr, mul(i, 32)), mload(offset))
                 offset := add(offset, 32)
 
                 // Load claimHash (32 bytes)
-                mstore(add(hashesPtr, mul(i, 32)), calldataload(offset))
+                mstore(add(hashesPtr, mul(i, 32)), mload(offset))
                 offset := add(offset, 32)
             }
         }
@@ -257,13 +257,12 @@ library Message {
      * @param messages Array of TheCompactBatchClaim structs to encode
      * @return Encoded bytes ready for wormholeRelayer.sendPayloadToEvm()
      */
-    function encodeBatchSend(TheCompactBatchClaim[] memory messages) internal pure returns (bytes memory) {
+    function encodeBatchSend(TheCompactBatchClaim[] calldata messages) internal pure returns (bytes memory) {
         bytes memory result = abi.encodePacked(uint256(messages.length));
 
         unchecked {
             for (uint256 i = 0; i < messages.length; ++i) {
-                TheCompactBatchClaim memory data = messages[i];
-                bytes memory encoded = abi.encode(data);
+                bytes memory encoded = abi.encode(messages[i]);
                 result = abi.encodePacked(result, encoded.length, encoded);
             }
         }

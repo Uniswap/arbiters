@@ -135,7 +135,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes32 claimant,
         uint256[] memory claimAmounts,
         uint256 /*unused target block*/
-    ) internal virtual override refundExcessEth returns (uint64 sequence) {
+    ) internal virtual override refundExcessEth {
         bytes memory message =
             Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts);
 
@@ -143,7 +143,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
 
         uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId); // Convert chainId to Wormhole format
 
-        sequence = _sendViaRelayer(wormholeChainId, message, GAS_LIMIT); // Send message via Wormhole relayer
+        _sendViaRelayer(wormholeChainId, message, GAS_LIMIT); // Send message via Wormhole relayer
     }
 
     /**
@@ -174,7 +174,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Sends a batch of full message data to a single chain via relayer (BATCH_SEND)
      * @dev Public entry point - calls _batchSend() then refunds excess ETH
      */
-    function batchSend(uint256 chainId, TheCompactBatchClaim[] memory messages, uint256 gasLimit)
+    function batchSend(uint256 chainId, TheCompactBatchClaim[] calldata messages, uint256 gasLimit)
         public
         payable
         virtual
@@ -187,7 +187,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Internal function to send a batch of full messages without refund logic
      * @dev Used by both batchSend and batchMultichainSend to avoid duplicate refunds
      */
-    function _batchSend(uint256 chainId, TheCompactBatchClaim[] memory messages, uint256 gasLimit)
+    function _batchSend(uint256 chainId, TheCompactBatchClaim[] calldata messages, uint256 gasLimit)
         internal
         virtual
         returns (uint64 sequence)
@@ -196,7 +196,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         unchecked {
             for (uint256 i = 0; i < messages.length; ++i) {
                 (bytes32 claimHash,) = messages[i].toClaimHashAndTypehash();
-                require(_dispositions[claimHash] != address(0), "Claim not found in dispositions");
+                require(this.filled(claimHash) != address(0), "Claim not found in dispositions");
             }
         }
 
@@ -233,10 +233,12 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      */
     //TODO add exact out here with scaling factor and fix bytes32 / address mismatch
     function _batchPost(uint256 chainId, bytes32[] memory claimHashes) internal virtual returns (uint64 sequence) {
-        address[] memory claimants = new address[](claimHashes.length);
+        bytes32[] memory claimants = new bytes32[](claimHashes.length);
 
         for (uint256 i = 0; i < claimHashes.length; i++) {
-            claimants[i] = _dispositions[claimHashes[i]]; // Get the claimant address from the claim hash
+            //TODO: need to convert address to bytes32 before assigning but will fix once mappings are updated
+            claimants[i] = bytes32(uint256(uint160(this.filled(claimHashes[i])))); // Convert address to bytes32 before assigning
+
         }
 
         bytes memory encodedBatch = Message.encodeBatchPost(claimants, claimHashes); // Encode the batch of claim hashes
@@ -251,7 +253,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @dev Loops through chains calling _batchPost(), refunds once at the end
      * @return sequences Array of Wormhole message sequence numbers
      */
-    function batchMultichainPost(BatchPost[] memory batches)
+    function batchMultichainPost(BatchPost[] calldata batches)
         public
         payable
         virtual
@@ -261,8 +263,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         sequences = new uint64[](batches.length);
         unchecked {
             for (uint256 i = 0; i < batches.length; ++i) {
-                BatchPost memory batch = batches[i];
-                sequences[i] = _batchPost(batch.chainId, batch.claimHashes);
+                sequences[i] = _batchPost(batches[i].chainId, batches[i].claimHashes);
             }
         }
     }
@@ -271,8 +272,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Sends batches of full message data to multiple chains via relayer (multichain BATCH_SEND)
      * @dev Loops through chains calling _batchSend(), refunds once at the end
      */
-    //todo swap to calldata arrays
-    function batchMultichainSend(BatchSend[] memory batches, uint256[] memory gasLimits)
+    function batchMultichainSend(BatchSend[] calldata batches, uint256[] calldata gasLimits)
         public
         payable
         virtual
@@ -283,8 +283,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         sequences = new uint64[](batches.length);
         unchecked {
             for (uint256 i = 0; i < batches.length; ++i) {
-                BatchSend memory batch = batches[i];
-                sequences[i] = _batchSend(batch.chainId, batch.messages, gasLimits[i]);
+                sequences[i] = _batchSend(batches[i].chainId, batches[i].messages, gasLimits[i]);
             }
         }
     }
