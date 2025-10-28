@@ -170,55 +170,92 @@ library Message {
     }
 
     /**
-     * @notice Encodes a batch of claim hashes for BATCH_POST operations
-     * @dev Lightweight encoding for user self-relay via wormhole.publishMessage()
-     *
-     * Format: chainId (32 bytes) | array length (32 bytes) | claimHashes (32 bytes each)
-     *
-     * Implementation steps:
-     * 1. Calculate total size: 64 + (claimHashes.length * 32)
-     * 2. Create bytes array of calculated size
-     * 3. Encode chainId at offset 0 (32 bytes)
-     * 4. Encode array length at offset 32 (32 bytes)
-     * 5. Loop through claimHashes and encode each at offset 64 + (i * 32)
-     * 6. Return encoded bytes
-     *
-     * Note: The nonce parameter is NOT included in payload - it's passed separately
-     * to wormhole.publishMessage() as the nonce parameter
-     *
-     * @param chainId The destination chain ID
-     * @param claimHashes Array of claim hashes to encode
-     * @return Encoded bytes ready for wormhole.publishMessage()
-     */
+    * @notice Encodes a batch of claim hashes for BATCH_POST operations
+    * @dev Lightweight encoding for user self-relay via wormhole.publishMessage()
+    * Format: length (32 bytes) | claimant1 (32) | claimHash1 (32) | claimant2 (32) | claimHash2 (32) | ...
+    */
+    //TODO: add exact out here with scaling factor
     function encodeBatchPost(
-        uint256 chainId,
+        bytes32[] memory claimants,
         bytes32[] memory claimHashes
     ) internal pure returns (bytes memory) {
-        // TODO: implement encoding logic
-        // Format: chainId | length | claimHash1 | claimHash2 | ...
+        uint256 length = claimants.length;
+        require(length == claimHashes.length, "array length mismatch");
+        
+        // 32 bytes for length + (32 + 32) * length for each pair
+        bytes memory result = new bytes(32 + (length * 64));
+        
+        assembly ("memory-safe") {
+            let ptr := add(result, 32)
+            
+            // Encode length
+            mstore(ptr, length)
+            ptr := add(ptr, 32)
+            
+            // Encode each claimant|claimHash pair
+            let claimantsPtr := add(claimants, 32)
+            let hashesPtr := add(claimHashes, 32)
+            
+            for { let i := 0 } lt(i, length) { i := add(i, 1) } {
+                // Store claimant (32 bytes)
+                mstore(ptr, mload(add(claimantsPtr, mul(i, 32))))
+                ptr := add(ptr, 32)
+                
+                // Store claimHash (32 bytes)
+                mstore(ptr, mload(add(hashesPtr, mul(i, 32))))
+                ptr := add(ptr, 32)
+            }
+        }
+        
+        return result;
     }
+
+    /**
+    * @notice Decodes a batch of claim hashes from BATCH_POST message payload
+    * @dev Inverse of encodeBatchPost()
+    */
+    //TODO: add exact out here with scaling factor
+    function decodeBatchPost(bytes calldata message)
+        internal
+        pure
+        returns (
+            bytes32[] memory claimants,
+            bytes32[] memory claimHashes
+        )
+    {
+        require(message.length >= 32, "message too short");
+        
+        uint256 length;
+        assembly ("memory-safe") {
+            length := calldataload(message.offset)
+        }
+        
+        require(message.length == 32 + (length * 64), "invalid message length");
+        
+        claimants = new bytes32[](length);
+        claimHashes = new bytes32[](length);
+        
+        assembly ("memory-safe") {
+            let offset := add(message.offset, 32)
+            let claimantsPtr := add(claimants, 32)
+            let hashesPtr := add(claimHashes, 32)
+            
+            for { let i := 0 } lt(i, length) { i := add(i, 1) } {
+                // Load claimant (32 bytes)
+                mstore(add(claimantsPtr, mul(i, 32)), calldataload(offset))
+                offset := add(offset, 32)
+                
+                // Load claimHash (32 bytes)
+                mstore(add(hashesPtr, mul(i, 32)), calldataload(offset))
+                offset := add(offset, 32)
+            }
+        }
+    }
+
 
     /**
      * @notice Encodes a batch of full SendData for BATCH_SEND operations
      * @dev Full encoding for automatic relay via wormholeRelayer.sendPayloadToEvm()
-     *
-     * Format: MessagePackingType (1 byte) | chainId (32 bytes) | array length (32 bytes) | SendData[]
-     *
-     * Implementation steps:
-     * 1. Calculate total size needed:
-     *    - 1 byte for MessagePackingType
-     *    - 32 bytes for chainId
-     *    - 32 bytes for array length
-     *    - For each message: calculate size using existing encode() logic
-     * 2. Create bytes array of calculated size
-     * 3. Encode MessagePackingType.BATCH_SEND at offset 0 (1 byte)
-     * 4. Encode chainId at offset 1 (32 bytes)
-     * 5. Encode array length at offset 33 (32 bytes)
-     * 6. Loop through messages:
-     *    - For each message, call encode() with message data
-     *    - Append encoded message to result at current offset
-     *    - Update offset by encoded message length
-     * 7. Return encoded bytes
      *
      * Note: MessagePackingType is included in payload (not nonce) because
      * sendPayloadToEvm() doesn't have a nonce parameter
@@ -234,37 +271,6 @@ library Message {
         // TODO: implement encoding logic
         // Format: MessagePackingType | chainId | length | message1 | message2 | ...
         // Each message uses the existing encode() function logic
-    }
-
-    /**
-     * @notice Decodes a batch of claim hashes from BATCH_POST message payload
-     * @dev Inverse of encodeBatchPost()
-     *
-     * Format: chainId (32 bytes) | array length (32 bytes) | claimHashes (32 bytes each)
-     *
-     * Implementation steps:
-     * 1. Validate message length >= 64 bytes (minimum for chainId + length)
-     * 2. Decode chainId from offset 0 (32 bytes)
-     * 3. Decode array length from offset 32 (32 bytes)
-     * 4. Validate message length == 64 + (arrayLength * 32)
-     * 5. Create claimHashes array of decoded length
-     * 6. Loop through and decode each claimHash at offset 64 + (i * 32)
-     * 7. Return chainId and claimHashes array
-     *
-     * @param message The encoded message bytes from wormhole.publishMessage()
-     * @return chainId The destination chain ID
-     * @return claimHashes Array of decoded claim hashes
-     */
-    function decodeBatchPost(bytes calldata message)
-        internal
-        pure
-        returns (
-            uint256 chainId,
-            bytes32[] memory claimHashes
-        )
-    {
-        // TODO: implement decoding logic
-        // Format: chainId | length | claimHash1 | claimHash2 | ...
     }
 
     /**

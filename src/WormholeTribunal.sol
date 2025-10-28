@@ -195,8 +195,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @dev Used by both batchSend and batchMultichainSend to avoid duplicate refunds
      */
     function _batchSend(uint256 chainId, SendData[] memory messages, uint256 gasLimit) internal virtual {
-        // Encode the batch using Message.encodeBatchSend(chainId, messages)
-        bytes memory encodedBatch = Message.encodeBatchSend(chainId, messages);
+        
+        bytes memory encodedBatch = Message.encodeBatchSend(messages);
 
         //todo need to append the MessagePackingType.BATCH_SEND to the encodedBatch
 
@@ -231,14 +231,25 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @return sequence The Wormhole message sequence number
      */
     function _batchPost(uint256 chainId, bytes32[] memory claimHashes) internal virtual returns (uint64 sequence) {
+
+        bytes32[] memory claimants = new bytes32[](claimHashes.length);
+        
+        for (uint256 i = 0; i < claimHashes.length; i++) {
+            claimants[i] = _dispositions[claimHashes]; 
+            //TODO: add exact out here with scaling factor
+        }
+
         // Encode the batch using Message.encodeBatchPost(chainId, claimHashes)
-        bytes memory encodedBatch = Message.encodeBatchPost(chainId, claimHashes);
+        bytes memory encodedBatch = Message.encodeBatchPost(claimants, claimHashes);
 
         // Enforce max message size
         require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
 
         // Publish message via Wormhole core
         sequence = _publishMessage(uint32(MessagePackingType.BATCH_POST), encodedBatch);
+
+        //add emit for sending batch post to specific chain
+
     }
 
     /**
