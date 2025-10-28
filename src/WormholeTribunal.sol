@@ -43,16 +43,12 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Enum to distinguish between different message packing types
      * @dev Used to determine how messages are encoded and transmitted
-     * - SINGLE_POST: Single message via wormhole.publishMessage() (user self-relay)
-     * - SINGLE_SEND: Single message via wormholeRelayer.sendPayloadToEvm() (automatic relay)
-     * - BATCH_POST: Batch of claim hashes via wormhole.publishMessage() (user self-relay)
-     * - BATCH_SEND: Batch of full messages via wormholeRelayer.sendPayloadToEvm() (automatic relay)
      */
     enum MessagePackingType {
-        SINGLE_POST,    // 0
-        SINGLE_SEND,    // 1
-        BATCH_POST,     // 2
-        BATCH_SEND      // 3
+        SINGLE_POST, // 0
+        SINGLE_SEND, // 1
+        BATCH_POST, // 2
+        BATCH_SEND // 3
     }
 
     /**
@@ -92,50 +88,33 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Publishes a message via Wormhole core contract
      * @dev Handles fee calculation, balance validation, and message publishing
-     * @param nonce The nonce value (typically MessagePackingType cast to uint32)
-     * @param payload The message payload to publish
      * @return sequence The Wormhole message sequence number
      */
     function _publishMessage(uint32 nonce, bytes memory payload) internal returns (uint64 sequence) {
         uint256 fee = WORMHOLE.messageFee();
         require(address(this).balance >= fee, "Insufficient ETH for wormhole fee");
 
-        sequence = WORMHOLE.publishMessage{value: fee}(
-            nonce,
-            payload,
-            CONSISTENCY_LEVEL
-        );
+        sequence = WORMHOLE.publishMessage{value: fee}(nonce, payload, CONSISTENCY_LEVEL);
     }
 
     /**
      * @notice Sends a message via Wormhole relayer for automatic delivery
      * @dev Handles fee calculation, balance validation, and relayer invocation
-     * @param wormholeChainId The destination chain ID in Wormhole format
-     * @param payload The message payload to send
-     * @param gasLimit The gas limit for execution on destination chain
      * @return dispensation The amount of ETH spent on the relayer fee
      */
-    function _sendViaRelayer(
-        uint16 wormholeChainId,
-        bytes memory payload,
-        uint256 gasLimit
-    ) internal returns (uint256 dispensation) {
-        (dispensation, ) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit);
+    function _sendViaRelayer(uint16 wormholeChainId, bytes memory payload, uint256 gasLimit)
+        internal
+        returns (uint256 dispensation)
+    {
+        (dispensation,) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit);
         require(address(this).balance >= dispensation, "Insufficient ETH for wormhole relayer fee");
 
-        WORMHOLE_RELAYER.sendPayloadToEvm{value: dispensation}(
-            wormholeChainId,
-            address(this),
-            payload,
-            0,
-            gasLimit
-        );
+        WORMHOLE_RELAYER.sendPayloadToEvm{value: dispensation}(wormholeChainId, address(this), payload, 0, gasLimit);
     }
 
     // ========================================================================
     // =========================== destination side ==========================
     // ========================================================================
-
 
     /**
      * @dev Quotes a single message using the enshrined Wormhole relayer.
@@ -148,15 +127,10 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes32,
         bytes32,
         uint256[] memory,
-        uint256 
+        uint256
     ) internal view virtual override returns (uint256 dispensation) {
-
         // Get a quote for the cost of gas for delivery
-        (dispensation, ) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(
-            WormholeMappings.toWormholeId(chainId),
-            0,
-            GAS_LIMIT
-        );
+        (dispensation,) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(WormholeMappings.toWormholeId(chainId), 0, GAS_LIMIT);
 
         return dispensation;
     }
@@ -175,14 +149,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         uint256[] memory claimAmounts,
         uint256 /*unused target block*/
     ) internal virtual override {
-        bytes memory message = Message.encode(
-            compact,
-            sponsorSignature,
-            allocatorSignature,
-            mandateHash,
-            claimant,
-            claimAmounts
-        );
+        bytes memory message =
+            Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts);
 
         //todo need to append the MessagePackingType.SINGLE_SEND to the message
 
@@ -205,16 +173,9 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes32 claimant,
         uint256[] memory claimAmounts
     ) internal returns (uint64 messageSequence) {
-
         // Encode the message with all data for filler convenience
-        bytes memory message = Message.encode(
-            compact,
-            sponsorSignature,
-            allocatorSignature,
-            mandateHash,
-            claimant,
-            claimAmounts
-        );
+        bytes memory message =
+            Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts);
 
         // Publish message via Wormhole core
         messageSequence = _publishMessage(uint32(MessagePackingType.SINGLE_POST), message);
@@ -226,9 +187,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Internal function to send a batch of full messages without refund logic
      * @dev Used by both batchSend and batchMultichainSend to avoid duplicate refunds
-     * @param chainId The destination chain ID
-     * @param messages Array of SendData structs containing full claim information
-     * @param gasLimit The gas limit for execution on the destination chain
      */
     function _batchSend(uint256 chainId, SendData[] memory messages, uint256 gasLimit) internal virtual {
         // Encode the batch using Message.encodeBatchSend(chainId, messages)
@@ -249,9 +207,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Sends a batch of full message data to a single destination chain with automatic relay
      * @dev Uses wormholeRelayer.sendPayloadToEvm() with MessagePackingType encoded in payload
-     * @param chainId The destination chain ID
-     * @param messages Array of SendData structs containing full claim information
-     * @param gasLimit The gas limit for execution on the destination chain
      */
     function batchSend(uint256 chainId, SendData[] memory messages, uint256 gasLimit) public payable virtual {
         // Call internal function to send batch
@@ -264,8 +219,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Internal function to post a batch of claim hashes without refund logic
      * @dev Used by both batchPost and batchMultichainPost to avoid duplicate refunds
-     * @param chainId The destination chain ID
-     * @param claimHashes Array of claim hashes to post
      * @return sequence The Wormhole message sequence number
      */
     function _batchPost(uint256 chainId, bytes32[] memory claimHashes) internal virtual returns (uint64 sequence) {
@@ -282,8 +235,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Posts a batch of claim hashes to a single destination chain for user self-relay
      * @dev Uses wormhole.publishMessage() with nonce = MessagePackingType.BATCH_POST
-     * @param chainId The destination chain ID
-     * @param claimHashes Array of claim hashes to post
      * @return sequence The Wormhole message sequence number
      */
     function batchPost(uint256 chainId, bytes32[] memory claimHashes) public payable virtual returns (uint64 sequence) {
@@ -297,7 +248,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Posts batches of claim hashes to multiple destination chains for user self-relay
      * @dev Loops through chains and calls batchPost() for each
-     * @param batches Array of BatchPost structs, one per destination chain
      */
     function batchMultichainPost(BatchPost[] memory batches) public payable virtual {
         // Loop through batches and call _batchPost for each
@@ -317,8 +267,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Sends batches of full message data to multiple destination chains with automatic relay
      * @dev Loops through chains and calls _batchSend() for each
-     * @param batches Array of BatchSend structs, one per destination chain
-     * @param gasLimits Array of gas limits for each batch (must match batches.length)
      */
     function batchMultichainSend(BatchSend[] memory batches, uint256[] memory gasLimits) public payable virtual {
         require(batches.length == gasLimits.length, "Batches and gasLimits length mismatch");
@@ -336,7 +284,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         // Refund entire remaining balance once at the end (router pattern)
         _refundExcessETH();
     }
-
 
     // ========================================================================
     // =========================== origin side ================================
@@ -358,21 +305,15 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      *    - Process each claim using corresponding entry in additionalData array
      * 6. Emit appropriate events
      *
-     * @param encodedVaa The Wormhole VAA containing the message
-     * @param additionalData Additional data needed to process claims (SendData or array)
      * @return messageSequence The sequence number of the processed message
      */
-    function receiveMessage(
-        bytes memory encodedVaa,
-        bytes memory additionalData
-    ) public payable returns (uint64 messageSequence) {
-
+    function receiveMessage(bytes memory encodedVaa, bytes memory additionalData)
+        public
+        payable
+        returns (uint64 messageSequence)
+    {
         // call the Wormhole core contract to parse and verify the encodedVAA
-        (
-            IWormhole.VM memory wormholeMessage,
-            bool valid,
-            string memory reason
-        ) = WORMHOLE.parseAndVerifyVM(encodedVaa);
+        (IWormhole.VM memory wormholeMessage, bool valid, string memory reason) = WORMHOLE.parseAndVerifyVM(encodedVaa);
 
         // confirm that the Wormhole core contract verified the message
         require(valid, reason);
@@ -380,7 +321,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         // Check that the source address is the tribunal's on the source chain
         // do not need to check chainID since tribunal address is deterministic for each chain
         // although, we might want to check the set of chainIDs in case an underlying
-        // chain is compromised 
+        // chain is compromised
         require(
             address(uint160(uint256(wormholeMessage.emitterAddress))) == address(this),
             "Message not from corresponding tribunal"
@@ -392,7 +333,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         // - Extract claim data from additionalData
         // - Call _sendClaim() for each claim
         // - Return the sequence number from wormholeMessage.sequence
-
     }
 
     /**
@@ -421,19 +361,12 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes32 sourceAddress,
         uint16 sourceChain,
         bytes32 deliveryHash
-    ) external override payable {
-
+    ) external payable override {
         // Check that the caller is the Wormhole relayer
-        require(
-            msg.sender == address(WORMHOLE_RELAYER),
-            "Only the Wormhole relayer can call this function"
-        );
+        require(msg.sender == address(WORMHOLE_RELAYER), "Only the Wormhole relayer can call this function");
 
         // Check that the source address is the tribunal's on the source chain
-        require(
-            address(uint160(uint256(sourceAddress))) == address(this),
-            "Message not from corresponding tribunal"
-        );
+        require(address(uint160(uint256(sourceAddress))) == address(this), "Message not from corresponding tribunal");
 
         // TODO: Check first byte of payload for MessagePackingType to determine if batch
         // For now, assume SINGLE_SEND and decode as single message
@@ -449,15 +382,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
             BatchClaimComponent[] memory claims
         ) = payload.decode();
 
-        _sendClaim(
-            sponsor,
-            nonce,
-            expires,
-            allocatorSignature,
-            rawSponsorSignature,
-            witness,
-            claims
-        );
+        _sendClaim(sponsor, nonce, expires, allocatorSignature, rawSponsorSignature, witness, claims);
     }
 
     /**
@@ -493,7 +418,5 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         });
 
         THE_COMPACT.batchClaim(claimPayload);
-
     }
-
 }
