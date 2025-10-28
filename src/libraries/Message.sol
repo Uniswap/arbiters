@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
 import {BatchCompact} from "the-compact/src/types/EIP712Types.sol";
+import {SendData} from "../types/BatchTypes.sol";
 
 library Message {
     uint8 constant HAS_ALLOCATOR_SIG = 0x01;
@@ -304,14 +305,4 @@ library Message {
         // Each message needs to be decoded using logic similar to existing decode()
     }
 
-    // Note: SendData struct is defined in WormholeTribunal.sol
-    // We'll need to either import it or pass the struct components separately
-    struct SendData {
-        BatchCompact compact;
-        bytes sponsorSignature;
-        bytes allocatorSignature;
-        bytes32 mandateHash;
-        bytes32 claimant;
-        uint256[] claimAmounts;
-    }
 }
