@@ -167,4 +167,151 @@ library Message {
             }
         }
     }
+
+    /**
+     * @notice Encodes a batch of claim hashes for BATCH_POST operations
+     * @dev Lightweight encoding for user self-relay via wormhole.publishMessage()
+     *
+     * Format: chainId (32 bytes) | array length (32 bytes) | claimHashes (32 bytes each)
+     *
+     * Implementation steps:
+     * 1. Calculate total size: 64 + (claimHashes.length * 32)
+     * 2. Create bytes array of calculated size
+     * 3. Encode chainId at offset 0 (32 bytes)
+     * 4. Encode array length at offset 32 (32 bytes)
+     * 5. Loop through claimHashes and encode each at offset 64 + (i * 32)
+     * 6. Return encoded bytes
+     *
+     * Note: The nonce parameter is NOT included in payload - it's passed separately
+     * to wormhole.publishMessage() as the nonce parameter
+     *
+     * @param chainId The destination chain ID
+     * @param claimHashes Array of claim hashes to encode
+     * @return Encoded bytes ready for wormhole.publishMessage()
+     */
+    function encodeBatchPost(
+        uint256 chainId,
+        bytes32[] memory claimHashes
+    ) internal pure returns (bytes memory) {
+        // TODO: implement encoding logic
+        // Format: chainId | length | claimHash1 | claimHash2 | ...
+    }
+
+    /**
+     * @notice Encodes a batch of full SendData for BATCH_SEND operations
+     * @dev Full encoding for automatic relay via wormholeRelayer.sendPayloadToEvm()
+     *
+     * Format: MessagePackingType (1 byte) | chainId (32 bytes) | array length (32 bytes) | SendData[]
+     *
+     * Implementation steps:
+     * 1. Calculate total size needed:
+     *    - 1 byte for MessagePackingType
+     *    - 32 bytes for chainId
+     *    - 32 bytes for array length
+     *    - For each message: calculate size using existing encode() logic
+     * 2. Create bytes array of calculated size
+     * 3. Encode MessagePackingType.BATCH_SEND at offset 0 (1 byte)
+     * 4. Encode chainId at offset 1 (32 bytes)
+     * 5. Encode array length at offset 33 (32 bytes)
+     * 6. Loop through messages:
+     *    - For each message, call encode() with message data
+     *    - Append encoded message to result at current offset
+     *    - Update offset by encoded message length
+     * 7. Return encoded bytes
+     *
+     * Note: MessagePackingType is included in payload (not nonce) because
+     * sendPayloadToEvm() doesn't have a nonce parameter
+     *
+     * @param chainId The destination chain ID
+     * @param messages Array of SendData structs to encode
+     * @return Encoded bytes ready for wormholeRelayer.sendPayloadToEvm()
+     */
+    function encodeBatchSend(
+        uint256 chainId,
+        SendData[] memory messages
+    ) internal pure returns (bytes memory) {
+        // TODO: implement encoding logic
+        // Format: MessagePackingType | chainId | length | message1 | message2 | ...
+        // Each message uses the existing encode() function logic
+    }
+
+    /**
+     * @notice Decodes a batch of claim hashes from BATCH_POST message payload
+     * @dev Inverse of encodeBatchPost()
+     *
+     * Format: chainId (32 bytes) | array length (32 bytes) | claimHashes (32 bytes each)
+     *
+     * Implementation steps:
+     * 1. Validate message length >= 64 bytes (minimum for chainId + length)
+     * 2. Decode chainId from offset 0 (32 bytes)
+     * 3. Decode array length from offset 32 (32 bytes)
+     * 4. Validate message length == 64 + (arrayLength * 32)
+     * 5. Create claimHashes array of decoded length
+     * 6. Loop through and decode each claimHash at offset 64 + (i * 32)
+     * 7. Return chainId and claimHashes array
+     *
+     * @param message The encoded message bytes from wormhole.publishMessage()
+     * @return chainId The destination chain ID
+     * @return claimHashes Array of decoded claim hashes
+     */
+    function decodeBatchPost(bytes calldata message)
+        internal
+        pure
+        returns (
+            uint256 chainId,
+            bytes32[] memory claimHashes
+        )
+    {
+        // TODO: implement decoding logic
+        // Format: chainId | length | claimHash1 | claimHash2 | ...
+    }
+
+    /**
+     * @notice Decodes a batch of SendData from BATCH_SEND message payload
+     * @dev Inverse of encodeBatchSend()
+     *
+     * Format: MessagePackingType (1 byte) | chainId (32 bytes) | array length (32 bytes) | SendData[]
+     *
+     * Implementation steps:
+     * 1. Validate message length >= 65 bytes (minimum for type + chainId + length)
+     * 2. Decode and validate MessagePackingType at offset 0 (should be BATCH_SEND)
+     * 3. Decode chainId from offset 1 (32 bytes)
+     * 4. Decode array length from offset 33 (32 bytes)
+     * 5. Create SendData array of decoded length
+     * 6. Track current offset starting at 65
+     * 7. Loop through messages:
+     *    - For each message, calculate the message size based on flags
+     *    - Extract message slice from current offset
+     *    - Decode using existing decode() logic or inline decoding
+     *    - Store decoded SendData in array
+     *    - Update offset by message size
+     * 8. Return chainId and messages array
+     *
+     * @param message The encoded message bytes from wormholeRelayer.sendPayloadToEvm()
+     * @return chainId The destination chain ID
+     * @return messages Array of decoded SendData structs
+     */
+    function decodeBatchSend(bytes calldata message)
+        internal
+        pure
+        returns (
+            uint256 chainId,
+            SendData[] memory messages
+        )
+    {
+        // TODO: implement decoding logic
+        // Format: MessagePackingType | chainId | length | message1 | message2 | ...
+        // Each message needs to be decoded using logic similar to existing decode()
+    }
+
+    // Note: SendData struct is defined in WormholeTribunal.sol
+    // We'll need to either import it or pass the struct components separately
+    struct SendData {
+        BatchCompact compact;
+        bytes sponsorSignature;
+        bytes allocatorSignature;
+        bytes32 mandateHash;
+        bytes32 claimant;
+        uint256[] claimAmounts;
+    }
 }
