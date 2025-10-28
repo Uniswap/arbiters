@@ -231,11 +231,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @param gasLimit The gas limit for execution on the destination chain
      */
     function _batchSend(uint256 chainId, SendData[] memory messages, uint256 gasLimit) internal virtual {
-        // Validate inputs
-        require(chainId != 0, "Invalid chainId");
-        require(messages.length > 0, "Empty messages array");
-        require(gasLimit > 0, "Invalid gas limit");
-
         // Encode the batch using Message.encodeBatchSend(chainId, messages)
         bytes memory encodedBatch = Message.encodeBatchSend(chainId, messages);
 
@@ -274,10 +269,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @return sequence The Wormhole message sequence number
      */
     function _batchPost(uint256 chainId, bytes32[] memory claimHashes) internal virtual returns (uint64 sequence) {
-        // Validate inputs
-        require(chainId != 0, "Invalid chainId");
-        require(claimHashes.length > 0, "Empty claim hashes array");
-
         // Encode the batch using Message.encodeBatchPost(chainId, claimHashes)
         bytes memory encodedBatch = Message.encodeBatchPost(chainId, claimHashes);
 
@@ -309,9 +300,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @param batches Array of BatchPost structs, one per destination chain
      */
     function batchMultichainPost(BatchPost[] memory batches) public payable virtual {
-        // Validate inputs
-        require(batches.length > 0, "Empty batches array");
-
         // Loop through batches and call _batchPost for each
         unchecked {
             for (uint256 i = 0; i < batches.length; ++i) {
@@ -333,8 +321,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @param gasLimits Array of gas limits for each batch (must match batches.length)
      */
     function batchMultichainSend(BatchSend[] memory batches, uint256[] memory gasLimits) public payable virtual {
-        // Validate inputs
-        require(batches.length > 0, "Empty batches array");
         require(batches.length == gasLimits.length, "Batches and gasLimits length mismatch");
 
         // Loop through batches and call _batchSend for each
