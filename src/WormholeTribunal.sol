@@ -190,6 +190,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         returns (uint64 sequence)
     {
         // TODO: add claimhash validation here
+        // basically need to loop through messages and compute the claim hash from the data and verify that the claimant 
+        // exists in the _dispositions mapping
 
         bytes memory encodedBatch = Message.encodeBatchSend(messages);
 
