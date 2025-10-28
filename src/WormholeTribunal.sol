@@ -14,11 +14,9 @@ import {IWormholeRelayer} from "wormhole-solidity-sdk/interfaces/IWormholeRelaye
 import {IWormholeReceiver} from "wormhole-solidity-sdk/interfaces/IWormholeReceiver.sol";
 import {IWormhole} from "wormhole-solidity-sdk/interfaces/IWormhole.sol";
 
-//library imports
+//library and type imports
 import {WormholeMappings} from "./libraries/WormholeMappings.sol";
 import {Message} from "./libraries/Message.sol";
-
-//type imports
 import {MessagePackingType, SendData, BatchPost, BatchSend} from "./types/WormholeTypes.sol";
 
 /**
@@ -70,36 +68,31 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     /**
      * @notice Publishes a message via Wormhole core contract
      * @dev Handles fee calculation, balance validation, and message publishing
-     * @return sequence The Wormhole message sequence number
      */
     function _publishMessage(uint32 nonce, bytes memory payload) internal returns (uint64 sequence) {
         uint256 fee = WORMHOLE.messageFee();
         require(address(this).balance >= fee, "Insufficient ETH for wormhole fee");
-
         sequence = WORMHOLE.publishMessage{value: fee}(nonce, payload, CONSISTENCY_LEVEL);
     }
 
     /**
      * @notice Sends a message via Wormhole relayer for automatic delivery
      * @dev Handles fee calculation, balance validation, and relayer invocation
-     * @return dispensation The amount of ETH spent on the relayer fee
      */
     function _sendViaRelayer(uint16 wormholeChainId, bytes memory payload, uint256 gasLimit)
         internal
         returns (uint64 sequence)
     {
-        (dispensation,) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit);
+        (uint256 dispensation,) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit); // Get a quote for the cost of gas for delivery
         require(address(this).balance >= dispensation, "Insufficient ETH for wormhole relayer fee");
-
         sequence = WORMHOLE_RELAYER.sendPayloadToEvm{
             value: dispensation
-        }(wormholeChainId, address(this), payload, 0, gasLimit);
+        }(wormholeChainId, address(this), payload, 0, gasLimit); // Send message via Wormhole relayer
     }
 
     /**
      * @notice Validates that a message came from the corresponding tribunal on another chain
      * @dev Checks that the emitter address matches this contract's address (deterministic across chains)
-     * @param emitter The address of the message emitter to validate
      */
     function _validateTribunalAddress(address emitter) internal view {
         require(emitter == address(this), "Message not from corresponding tribunal");
@@ -123,10 +116,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         uint256[] memory,
         uint256
     ) internal view virtual override returns (uint256 dispensation) {
-        // Get a quote for the cost of gas for delivery
         (dispensation,) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(WormholeMappings.toWormholeId(chainId), 0, GAS_LIMIT);
-
-        return dispensation;
     }
 
     /**
@@ -146,18 +136,17 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes memory message =
             Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts);
 
-        //TODO need to append the MessagePackingType.SINGLE_SEND to the message
+        message = abi.encodePacked(uint8(MessagePackingType.SINGLE_SEND), message); // Prepend message type for routing on claim chain
 
-        uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId);
+        uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId); // Convert chainId to Wormhole format
 
-        // Send message via Wormhole relayer
-        sequence = _sendViaRelayer(wormholeChainId, message, GAS_LIMIT);
+        sequence = _sendViaRelayer(wormholeChainId, message, GAS_LIMIT); // Send message via Wormhole relayer
     }
 
     /**
      * @notice Publishes a single message via Wormhole core for user self-relay (SINGLE_POST)
      * @dev Uses wormhole.publishMessage() - user must relay VAA to claim chain themselves
-     * @dev Includes all data needed to process the message in the payload itself
+     * @dev Includes all data needed to process the message in the payload itself for filler convenience + we already have in execution context
      */
     function _post(
         BatchCompact calldata compact,
@@ -167,12 +156,11 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         bytes32 claimant,
         uint256[] memory claimAmounts
     ) internal refundExcessEth returns (uint64 sequence) {
-        // Encode the message with all data for filler convenience
-        bytes memory message =
-            Message.encode(compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts);
+        bytes memory message = Message.encode(
+            compact, sponsorSignature, allocatorSignature, mandateHash, claimant, claimAmounts
+        );
 
-        // Publish message via Wormhole core
-        sequence = _publishMessage(uint32(MessagePackingType.SINGLE_POST), message);
+        sequence = _publishMessage(uint32(MessagePackingType.SINGLE_POST), message); // Publish message via Wormhole core
     }
 
     // ========================================================================
@@ -203,16 +191,13 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     {
         bytes memory encodedBatch = Message.encodeBatchSend(messages);
 
-        //todo need to append the MessagePackingType.BATCH_SEND to the encodedBatch
+        encodedBatch = abi.encodePacked(uint8(MessagePackingType.BATCH_SEND), encodedBatch); // Prepend message type for routing on claim chain
 
-        // Enforce max message size
-        require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
+        require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size"); // Enforce max message size
 
-        // Convert chainId to Wormhole format
-        uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId);
+        uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId); // Convert chainId to Wormhole format
 
-        // Send message via Wormhole relayer
-        sequence = _sendViaRelayer(wormholeChainId, encodedBatch, gasLimit);
+        sequence = _sendViaRelayer(wormholeChainId, encodedBatch, gasLimit); // Send message via Wormhole relayer
     }
 
     /**
@@ -240,17 +225,14 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         address[] memory claimants = new address[](claimHashes.length);
 
         for (uint256 i = 0; i < claimHashes.length; i++) {
-            claimants[i] = _dispositions[claimHashes[i]];
+            claimants[i] = _dispositions[claimHashes[i]]; // Get the claimant address from the claim hash
         }
 
-        // Encode the batch using Message.encodeBatchPost(chainId, claimHashes)
-        bytes memory encodedBatch = Message.encodeBatchPost(claimants, claimHashes);
+        bytes memory encodedBatch = Message.encodeBatchPost(claimants, claimHashes); // Encode the batch of claim hashes
 
-        // Enforce max message size
-        require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
+        require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size"); // Enforce max message size
 
-        // Publish message via Wormhole core
-        sequence = _publishMessage(uint32(MessagePackingType.BATCH_POST), encodedBatch);
+        sequence = _publishMessage(uint32(MessagePackingType.BATCH_POST), encodedBatch); // Publish message via Wormhole core
     }
 
     /**
@@ -266,11 +248,9 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         returns (uint64[] memory sequences)
     {
         sequences = new uint64[](batches.length);
-        // Loop through batches and call _batchPost for each
         unchecked {
             for (uint256 i = 0; i < batches.length; ++i) {
                 BatchPost memory batch = batches[i];
-                // Call internal _batchPost which doesn't refund
                 sequences[i] = _batchPost(batch.chainId, batch.claimHashes);
             }
         }
@@ -280,21 +260,20 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Sends batches of full message data to multiple chains via relayer (multichain BATCH_SEND)
      * @dev Loops through chains calling _batchSend(), refunds once at the end
      */
+    //todo swap to calldata arrays
     function batchMultichainSend(BatchSend[] memory batches, uint256[] memory gasLimits)
         public
         payable
         virtual
         refundExcessEth
+        returns (uint64[] memory sequences)
     {
         require(batches.length == gasLimits.length, "Batches and gasLimits length mismatch");
-
-        // Loop through batches and call _batchSend for each
+        sequences = new uint64[](batches.length);
         unchecked {
             for (uint256 i = 0; i < batches.length; ++i) {
                 BatchSend memory batch = batches[i];
-
-                // Call internal _batchSend which doesn't refund
-                _batchSend(batch.chainId, batch.messages, gasLimits[i]);
+                sequences[i] = _batchSend(batch.chainId, batch.messages, gasLimits[i]);
             }
         }
     }
@@ -339,12 +318,17 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         _validateTribunalAddress(address(uint160(uint256(wormholeMessage.emitterAddress))));
 
         // TODO: Decode message / additionalData based on message type (wormholeMessage.nonce)
+        // - verify against claim hash
         // - Check nonce to determine if SINGLE_POST or BATCH_POST
         // - Decode payload accordingly using Message library functions
         // - Extract claim data from additionalData
         // - Call _sendClaim() for each claim
         // - Return the sequence number from wormholeMessage.sequence
     }
+
+    // ========================================================================
+    // ============ CLAIM CHAIN: Relayed Functions ============================
+    // ========================================================================
 
     /**
      * @notice Receives and processes SEND messages delivered automatically by Wormhole relayer
@@ -372,15 +356,29 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         uint16 sourceChain,
         bytes32 deliveryHash
     ) external payable override {
-        // Check that the caller is the Wormhole relayer
         require(msg.sender == address(WORMHOLE_RELAYER), "Only the Wormhole relayer can call this function");
 
-        // Check that the source address is the tribunal's on the source chain
         _validateTribunalAddress(address(uint160(uint256(sourceAddress))));
 
-        // TODO: Check first byte of payload for MessagePackingType to determine if batch
-        // For now, assume SINGLE_SEND and decode as single message
+        // Check first byte for MessagePackingType
+        require(payload.length > 0, "Empty payload");
+        MessagePackingType messageType = MessagePackingType(uint8(payload[0]));
 
+        // Dispatch based on message type
+        if (messageType == MessagePackingType.SINGLE_SEND) {
+            _receiveSingleSend(payload[1:]);
+        } else if (messageType == MessagePackingType.BATCH_SEND) {
+            _receiveBatchSend(payload[1:]);
+        } else {
+            revert("Unsupported message type for relayer delivery");
+        }
+    }
+
+    /**
+     * @notice Internal handler for SINGLE_SEND messages
+     * @dev Decodes and processes a single claim message
+     */
+    function _receiveSingleSend(bytes calldata payload) internal {
         // Decode the message
         (
             address sponsor,
@@ -396,6 +394,38 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     }
 
     /**
+     * @notice Internal handler for BATCH_SEND messages
+     * @dev Decodes and processes a batch of claim messages
+     */
+    function _receiveBatchSend(bytes calldata payload) internal {
+        // Decode the batch
+        (
+            address[] memory sponsors,
+            uint256[] memory nonces,
+            uint256[] memory expires,
+            bytes[] memory allocatorSignatures,
+            bytes[] memory sponsorSignatures,
+            bytes32[] memory witnesses,
+            BatchClaimComponent[][] memory claims
+        ) = Message.decodeBatchSend(payload);
+
+        // Process each message in the batch
+        unchecked {
+            for (uint256 i = 0; i < sponsors.length; ++i) {
+                _sendClaim(
+                    sponsors[i],
+                    nonces[i],
+                    expires[i],
+                    allocatorSignatures[i],
+                    sponsorSignatures[i],
+                    witnesses[i],
+                    claims[i]
+                );
+            }
+        }
+    }
+
+    /**
      * @notice Internal function to construct and submit a batch claim to The Compact
      * @dev Constructs TheCompactBatchClaim payload and calls THE_COMPACT.batchClaim()
      * @dev Handles optional sponsor signature validation (checks for non-zero signature)
@@ -404,12 +434,12 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         address sponsor,
         uint256 nonce,
         uint256 expires,
-        bytes calldata allocatorSignature,
-        bytes calldata rawSponsorSignature,
+        bytes memory allocatorSignature,
+        bytes memory rawSponsorSignature,
         bytes32 witness,
         BatchClaimComponent[] memory claims
     ) internal {
-        // Only assign sponsorSignature if provided signature has nonzero bytes
+        // TODO: do we need to do this for allocatorSignature?
         bytes memory sponsorSignature;
         if (
             keccak256(rawSponsorSignature)
@@ -429,6 +459,6 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
             claims: claims
         });
 
-        THE_COMPACT.batchClaim(claimPayload);
+        THE_COMPACT.batchClaim(claimPayload); 
     }
 }
