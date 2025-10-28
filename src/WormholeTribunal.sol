@@ -4,6 +4,8 @@ pragma solidity ^0.8.27;
 import {BatchClaim as TheCompactBatchClaim} from "lib/the-compact/src/types/BatchClaims.sol";
 import {BatchCompact} from "the-compact/src/types/EIP712Types.sol";
 import {BatchClaimComponent} from "the-compact/src/types/Components.sol";
+import {ClaimHashLib} from "lib/the-compact/src/lib/ClaimHashLib.sol";
+
 
 //tribunal imports
 import {Tribunal} from "tribunal/Tribunal.sol";
@@ -17,7 +19,7 @@ import {IWormhole} from "wormhole-solidity-sdk/interfaces/IWormhole.sol";
 //library and type imports
 import {WormholeMappings} from "./libraries/WormholeMappings.sol";
 import {Message} from "./libraries/Message.sol";
-import {MessagePackingType, SendData, BatchPost, BatchSend} from "./types/WormholeTypes.sol";
+import {MessagePackingType, BatchPost, BatchSend} from "./types/WormholeTypes.sol";
 
 /**
  * @title WormholeTribunal
@@ -27,6 +29,7 @@ import {MessagePackingType, SendData, BatchPost, BatchSend} from "./types/Wormho
 
 contract WormholeTribunal is IWormholeReceiver, Tribunal {
     using Message for bytes;
+    using ClaimHashLib for TheCompactBatchClaim;  
 
     uint256 constant GAS_LIMIT = 150_000; //constant for now, will need arg unless we precalculate for single
     uint8 constant CONSISTENCY_LEVEL = 201; // safe for now
@@ -171,7 +174,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Sends a batch of full message data to a single chain via relayer (BATCH_SEND)
      * @dev Public entry point - calls _batchSend() then refunds excess ETH
      */
-    function batchSend(uint256 chainId, SendData[] memory messages, uint256 gasLimit)
+    function batchSend(uint256 chainId, TheCompactBatchClaim[] memory messages, uint256 gasLimit)
         public
         payable
         virtual
@@ -184,14 +187,18 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Internal function to send a batch of full messages without refund logic
      * @dev Used by both batchSend and batchMultichainSend to avoid duplicate refunds
      */
-    function _batchSend(uint256 chainId, SendData[] memory messages, uint256 gasLimit)
+    function _batchSend(uint256 chainId, TheCompactBatchClaim[] memory messages, uint256 gasLimit)
         internal
         virtual
         returns (uint64 sequence)
     {
-        // TODO: add claimhash validation here
-        // basically need to loop through messages and compute the claim hash from the data and verify that the claimant 
-        // exists in the _dispositions mapping
+        // Validate each claim hash exists in dispositions
+        unchecked {
+            for (uint256 i = 0; i < messages.length; ++i) {
+                (bytes32 claimHash,) = messages[i].toClaimHashAndTypehash();
+                require(_dispositions[claimHash] != address(0), "Claim not found in dispositions");
+            }
+        }
 
         bytes memory encodedBatch = Message.encodeBatchSend(messages);
 
@@ -290,10 +297,10 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Receives and processes a single POST message relayed by user via VAA
      * @dev Handles SINGLE_POST message type via user self-relay with VAA
      * @param encodedVaa The encoded VAA from Wormhole
-     * @param additionalData The full SendData needed to process the claim
+     * @param additionalData The full TheCompactBatchClaim needed to process the claim
      * @return sequence The Wormhole message sequence number
      */
-    function receiveSinglePost(bytes memory encodedVaa, SendData calldata additionalData)
+    function receiveSinglePost(bytes memory encodedVaa, TheCompactBatchClaim calldata additionalData)
         public
         payable
         returns (uint64 sequence)
@@ -313,10 +320,10 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Receives and processes a batch POST message relayed by user via VAA
      * @dev Handles BATCH_POST message type via user self-relay with VAA
      * @param encodedVaa The encoded VAA from Wormhole
-     * @param additionalData Array of full SendData needed to process each claim
+     * @param additionalData Array of full TheCompactBatchClaim needed to process each claim
      * @return sequence The Wormhole message sequence number
      */
-    function receiveBatchPost(bytes memory encodedVaa, SendData[] calldata additionalData)
+    function receiveBatchPost(bytes memory encodedVaa, TheCompactBatchClaim[] calldata additionalData)
         public
         payable
         returns (uint64 sequence)
@@ -336,7 +343,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Internal handler for single POST messages
      * @dev TODO: Verify claim hash and call _sendClaim()
      */
-    function _receiveSinglePost(bytes32 claimHash, SendData calldata data) internal {
+    function _receiveSinglePost(bytes32 claimHash, TheCompactBatchClaim calldata data) internal {
         // TODO: Compute claim hash from data and verify it matches claimHash (might not need this because self relaying)
         // TODO: Call _sendClaim() with decoded data
     }
@@ -345,7 +352,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @notice Internal handler for batch POST messages
      * @dev TODO: Verify claim hashes and call _sendClaim() for each
      */
-    function _receiveBatchPost(bytes32[] memory claimants, bytes32[] memory claimHashes, SendData[] calldata data)
+    function _receiveBatchPost(bytes32[] memory claimants, bytes32[] memory claimHashes, TheCompactBatchClaim[] calldata data)
         internal
     {
         // TODO: For each claim, compute hash from data and verify it matches
@@ -437,27 +444,20 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      */
     function _receiveBatchSend(bytes calldata payload) internal {
         // Decode the batch
-        (
-            address[] memory sponsors,
-            uint256[] memory nonces,
-            uint256[] memory expires,
-            bytes[] memory allocatorSignatures,
-            bytes[] memory sponsorSignatures,
-            bytes32[] memory witnesses,
-            BatchClaimComponent[][] memory claims
-        ) = Message.decodeBatchSend(payload);
+        TheCompactBatchClaim[] memory claims = Message.decodeBatchSend(payload);
 
         // Process each message in the batch
         unchecked {
-            for (uint256 i = 0; i < sponsors.length; ++i) {
+            for (uint256 i = 0; i < claims.length; ++i) {
+                TheCompactBatchClaim memory claim = claims[i];
                 _sendClaim(
-                    sponsors[i],
-                    nonces[i],
-                    expires[i],
-                    allocatorSignatures[i],
-                    sponsorSignatures[i],
-                    witnesses[i],
-                    claims[i]
+                    claim.sponsor,
+                    claim.nonce,
+                    claim.expires,
+                    claim.allocatorData,
+                    claim.sponsorSignature,
+                    claim.witness,
+                    claim.claims
                 );
             }
         }

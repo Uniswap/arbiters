@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {BatchCompact} from "the-compact/src/types/EIP712Types.sol";
+import {BatchClaim as TheCompactBatchClaim} from "lib/the-compact/src/types/BatchClaims.sol";
 
 /**
  * @notice Enum to distinguish between different message packing types
@@ -15,19 +15,6 @@ enum MessagePackingType {
 }
 
 /**
- * @notice Contains all data needed to process a claim
- * @dev This struct packages together the compact, signatures, and claim details
- */
-struct SendData {
-    BatchCompact compact;
-    bytes sponsorSignature;
-    bytes allocatorSignature;
-    bytes32 mandateHash;
-    bytes32 claimant;
-    uint256[] claimAmounts;
-}
-
-/**
  * @notice Represents a batch of claim hashes for a single destination chain
  * @dev Used for BATCH_POST operations where only claim hashes are transmitted
  */
@@ -38,9 +25,9 @@ struct BatchPost {
 
 /**
  * @notice Represents a batch of full message data for a single destination chain
- * @dev Used for BATCH_SEND operations where complete SendData is transmitted
+ * @dev Used for BATCH_SEND operations where complete TheCompactBatchClaim is transmitted
  */
 struct BatchSend {
     uint256 chainId;
-    SendData[] messages;
+    TheCompactBatchClaim[] messages;
 }

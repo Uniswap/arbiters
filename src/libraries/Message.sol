@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
 import {BatchCompact} from "the-compact/src/types/EIP712Types.sol";
-import {SendData} from "../types/WormholeTypes.sol";
+import {BatchClaim as TheCompactBatchClaim} from "lib/the-compact/src/types/BatchClaims.sol";
 
 library Message {
     uint8 constant HAS_ALLOCATOR_SIG = 0x01;
@@ -251,26 +251,19 @@ library Message {
     }
 
     /**
-     * @notice Encodes a batch of full SendData for BATCH_SEND operations
+     * @notice Encodes a batch of TheCompactBatchClaim for BATCH_SEND operations
      * @dev Full encoding for automatic relay via wormholeRelayer.sendPayloadToEvm()
      * Format: count (32 bytes) | length1 (32) | message1 (variable) | length2 (32) | message2 (variable) | ...
-     * @param messages Array of SendData structs to encode
+     * @param messages Array of TheCompactBatchClaim structs to encode
      * @return Encoded bytes ready for wormholeRelayer.sendPayloadToEvm()
      */
-    function encodeBatchSend(SendData[] calldata messages) internal pure returns (bytes memory) {
+    function encodeBatchSend(TheCompactBatchClaim[] memory messages) internal pure returns (bytes memory) {
         bytes memory result = abi.encodePacked(uint256(messages.length));
 
         unchecked {
             for (uint256 i = 0; i < messages.length; ++i) {
-                SendData calldata data = messages[i];
-                bytes memory encoded = encode(
-                    data.compact,
-                    data.sponsorSignature,
-                    data.allocatorSignature,
-                    data.mandateHash,
-                    data.claimant,
-                    data.claimAmounts
-                );
+                TheCompactBatchClaim memory data = messages[i];
+                bytes memory encoded = abi.encode(data);
                 result = abi.encodePacked(result, encoded.length, encoded);
             }
         }
@@ -279,29 +272,15 @@ library Message {
     }
 
     /**
-     * @notice Decodes a batch of SendData from BATCH_SEND message payload
+     * @notice Decodes a batch of TheCompactBatchClaim from BATCH_SEND message payload
      * @dev Inverse of encodeBatchSend()
      * @param message The encoded message bytes from wormholeRelayer.sendPayloadToEvm()
-     * @return sponsors Array of sponsor addresses
-     * @return nonces Array of nonces
-     * @return expires Array of expiration timestamps
-     * @return allocatorSignatures Array of allocator signatures
-     * @return sponsorSignatures Array of sponsor signatures
-     * @return witnesses Array of witness hashes
-     * @return claims Array of claim components
+     * @return claims Array of TheCompactBatchClaim structs
      */
     function decodeBatchSend(bytes calldata message)
         internal
-        view
-        returns (
-            address[] memory sponsors,
-            uint256[] memory nonces,
-            uint256[] memory expires,
-            bytes[] memory allocatorSignatures,
-            bytes[] memory sponsorSignatures,
-            bytes32[] memory witnesses,
-            BatchClaimComponent[][] memory claims
-        )
+        pure
+        returns (TheCompactBatchClaim[] memory claims)
     {
         require(message.length >= 32, "message too short");
 
@@ -310,13 +289,7 @@ library Message {
             count := calldataload(message.offset)
         }
 
-        sponsors = new address[](count);
-        nonces = new uint256[](count);
-        expires = new uint256[](count);
-        allocatorSignatures = new bytes[](count);
-        sponsorSignatures = new bytes[](count);
-        witnesses = new bytes32[](count);
-        claims = new BatchClaimComponent[][](count);
+        claims = new TheCompactBatchClaim[](count);
 
         uint256 offset = 32;
         unchecked {
@@ -333,24 +306,7 @@ library Message {
 
                 // Extract the message slice and decode
                 bytes calldata msgSlice = message[offset:offset + msgLength];
-
-                (
-                    address sponsor,
-                    uint256 nonce,
-                    uint256 expire,
-                    bytes calldata allocatorSignature,
-                    bytes calldata sponsorSignature,
-                    bytes32 witness,
-                    BatchClaimComponent[] memory claim
-                ) = decode(msgSlice);
-
-                sponsors[i] = sponsor;
-                nonces[i] = nonce;
-                expires[i] = expire;
-                allocatorSignatures[i] = allocatorSignature;
-                sponsorSignatures[i] = sponsorSignature;
-                witnesses[i] = witness;
-                claims[i] = claim;
+                claims[i] = abi.decode(msgSlice, (TheCompactBatchClaim));
 
                 offset += msgLength;
             }
