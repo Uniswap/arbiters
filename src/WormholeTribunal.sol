@@ -107,6 +107,31 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         );
     }
 
+    /**
+     * @notice Sends a message via Wormhole relayer for automatic delivery
+     * @dev Handles fee calculation, balance validation, and relayer invocation
+     * @param wormholeChainId The destination chain ID in Wormhole format
+     * @param payload The message payload to send
+     * @param gasLimit The gas limit for execution on destination chain
+     * @return dispensation The amount of ETH spent on the relayer fee
+     */
+    function _sendViaRelayer(
+        uint16 wormholeChainId,
+        bytes memory payload,
+        uint256 gasLimit
+    ) internal returns (uint256 dispensation) {
+        (dispensation, ) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit);
+        require(address(this).balance >= dispensation, "Insufficient ETH for wormhole relayer fee");
+
+        WORMHOLE_RELAYER.sendPayloadToEvm{value: dispensation}(
+            wormholeChainId,
+            address(this),
+            payload,
+            0,
+            gasLimit
+        );
+    }
+
     // ========================================================================
     // =========================== destination side ==========================
     // ========================================================================
@@ -140,7 +165,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      * @dev Dispatches a single message using the enshrined Wormhole relayer.
      */
     // _send
-    function _processDirective( 
+    function _processDirective(
         uint256 chainId,
         BatchCompact calldata compact,
         bytes calldata sponsorSignature,
@@ -163,20 +188,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
 
         uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId);
 
-        // Get a quote for the cost of gas for delivery
-        (uint256 dispensation, ) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(wormholeChainId, 0, GAS_LIMIT);
-
-        // Capture balance before sending (includes any remaining msg.value from upstream + forced ETH)
-        uint256 balanceBeforeFee = address(this).balance;
-        require(balanceBeforeFee >= dispensation, "Insufficient ETH for wormhole relayer fee");
-
-        WORMHOLE_RELAYER.sendPayloadToEvm{value: dispensation}(
-            wormholeChainId,
-            address(this),
-            message,
-            0,
-            GAS_LIMIT
-        );
+        // Send message via Wormhole relayer
+        _sendViaRelayer(wormholeChainId, message, GAS_LIMIT);
 
         // Refund entire remaining balance (router pattern)
         _refundExcessETH();
@@ -234,20 +247,8 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
         // Convert chainId to Wormhole format
         uint16 wormholeChainId = WormholeMappings.toWormholeId(chainId);
 
-        // Calculate cost: wormholeRelayer.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit)
-        (uint256 dispensation, ) = WORMHOLE_RELAYER.quoteEVMDeliveryPrice(wormholeChainId, 0, gasLimit);
-
-        // Validate sufficient balance
-        require(address(this).balance >= dispensation, "Insufficient ETH for wormhole relayer fee");
-
-        // Send the batch via wormholeRelayer.sendPayloadToEvm
-        WORMHOLE_RELAYER.sendPayloadToEvm{value: dispensation}(
-            wormholeChainId,
-            address(this),
-            encodedBatch,
-            0,
-            gasLimit
-        );
+        // Send message via Wormhole relayer
+        _sendViaRelayer(wormholeChainId, encodedBatch, gasLimit);
     }
 
     /**
