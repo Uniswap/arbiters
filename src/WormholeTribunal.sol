@@ -251,7 +251,7 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
     }
 
 
-        /**
+    /**
      * @notice Posts a batch of claim hashes to a single destination chain for user self-relay
      * @dev Uses wormhole.publishMessage() with nonce = MessagePackingType.BATCH_POST
      *
@@ -272,19 +272,35 @@ contract WormholeTribunal is IWormholeReceiver, Tribunal {
      */
     // probably want read function to make sure its not gonna be too big and claim hashes are valid
     function batchPost(uint256 chainId, bytes32[] memory claimHashes) public payable virtual returns (uint64 sequence) {
+        // Validate inputs
+        require(chainId != 0, "Invalid chainId");
+        require(claimHashes.length > 0, "Empty claim hashes array");
 
         // Encode the batch using Message.encodeBatchPost(chainId, claimHashes)
-        
-        // need to check the max message size
+        bytes memory encodedBatch = Message.encodeBatchPost(chainId, claimHashes);
 
-        // Get the Wormhole message fee: wormhole.messageFee()
+        // Enforce max message size
+        require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
+
+        // Get the Wormhole message fee
+        uint256 wormholeFee = wormhole.messageFee();
 
         // Capture balance before paying fee (includes any remaining msg.value from upstream + forced ETH)
+        uint256 balanceBeforeFee = address(this).balance;
+        require(balanceBeforeFee >= wormholeFee, "Insufficient ETH for wormhole fee");
 
-        //wormhole.publishMessage{value: wormholeFee} with nonce = MessagePackingType.BATCH_POST
+        // Publish message with MessagePackingType.BATCH_POST as nonce
+        sequence = wormhole.publishMessage{value: wormholeFee}(
+            uint32(MessagePackingType.BATCH_POST),
+            encodedBatch,
+            CONSISTENCY_LEVEL
+        );
 
         // Refund entire remaining balance (router pattern)
-
+        uint256 toRefund = balanceBeforeFee - wormholeFee;
+        if (toRefund > 0) {
+            msg.sender.safeTransferETH(toRefund);
+        }
     }
 
     /**
