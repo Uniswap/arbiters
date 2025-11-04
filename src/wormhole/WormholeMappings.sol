@@ -43,13 +43,13 @@ library WormholeMappings {
 
     /// @notice Get Wormhole Relayer contract address by EVM chain ID
     /// @dev Max 3 comparisons (~45 gas) for 4 chains
-    function getWormholeRelayer(uint256 evmChainId) internal pure returns (address) {
+    function getWormholeExecutor(uint256 evmChainId) internal pure returns (address) {
         if (evmChainId <= 130) {
-            if (evmChainId == 1) return 0x27428DD2d3DD32A4D7f7C497eAaa23130d894911; // Ethereum
-            if (evmChainId == 130) return 0x27428DD2d3DD32A4D7f7C497eAaa23130d894911; // Unichain
+            if (evmChainId == 1) return 0x84EEe8dBa37C36947397E1E11251cA9A06Fc6F8a; // Ethereum
+            if (evmChainId == 130) return 0x764dD868eAdD27ce57BCB801E4ca4a193d231Aed; // Unichain
         } else {
-            if (evmChainId == 8453) return 0x706F82e9bb5b0813501714Ab5974216704980e31; // Base
-            if (evmChainId == 42161) return 0x27428DD2d3DD32A4D7f7C497eAaa23130d894911; // Arbitrum
+            if (evmChainId == 8453) return 0x9E1936E91A4a5AE5A5F75fFc472D6cb8e93597ea; // Base
+            if (evmChainId == 42161) return 0x3980f8318fc03d79033Bbb421A622CDF8d2Eeab4; // Arbitrum
         }
         revert("Unsupported chain");
     }
