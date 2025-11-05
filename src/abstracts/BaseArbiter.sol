@@ -67,6 +67,27 @@ abstract contract BaseArbiter {
     /**
      * @notice Derives the EIP-712 claim hash from Lock array
      * @dev Uses COMPACT_TYPEHASH_WITH_MANDATE which includes the Mandate witness type
+     * @dev Public view function for external access to claim hash derivation
+     * @param sponsor The account to source tokens from
+     * @param nonce Replay protection nonce
+     * @param expires Expiration timestamp
+     * @param witness Hash of the witness (mandate) data
+     * @param locks Array of locks (lockTag, token, amount)
+     * @return claimHash The EIP-712 claim hash
+     */
+    function deriveClaimHash(
+        address sponsor,
+        uint256 nonce,
+        uint256 expires,
+        bytes32 witness,
+        Lock[] calldata locks
+    ) public view returns (bytes32) {
+        return _deriveClaimHash(sponsor, nonce, expires, witness, locks);
+    }
+
+    /**
+     * @notice Internal function to derive the EIP-712 claim hash from Lock array
+     * @dev Uses COMPACT_TYPEHASH_WITH_MANDATE which includes the Mandate witness type
      * @param sponsor The account to source tokens from
      * @param nonce Replay protection nonce
      * @param expires Expiration timestamp

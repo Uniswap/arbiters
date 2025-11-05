@@ -104,8 +104,8 @@ abstract contract ExecutorReceiveImpl is ExecutorSharedBase, IVaaV1Receiver {
       bytes calldata payload
     ) = CoreBridgeLib.decodeAndVerifyVaaCd(address(_coreBridge), multiSigVaa);
 
-    require(emitterAddress == bytes32(uint256(uint160(address(this)))), "Message not from corresponding arbiter");
-
+    // we check emitter address in arbiter side in _executeVaa function
+    
     _executeVaa(
       payload,
       timestamp,

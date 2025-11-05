@@ -69,7 +69,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         bytes32 claimHash,
         bytes32 claimant, //claimant
         uint256 claimReductionScalingFactor, //claimReductionScalingFactor
-        uint256[] calldata claimAmounts, //claimAmounts per portion
+        uint256[] calldata /*claimAmounts*/, //claimAmounts per portion
         bytes calldata context //allocator data, sponsor signature, claims
     ) external payable refundExcessEth returns (bytes4) {
         require(compact.arbiter == address(this), "Invalid arbiter");
@@ -131,12 +131,12 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         bytes calldata sponsorSignature,
         WormholeParams memory params,
         bytes calldata signedQuote
-    ) internal pure returns (bytes memory) {
+    ) external pure returns (bytes memory) {
         return Message.encodeSendContext(allocatorData, sponsorSignature, params, signedQuote);
     }
 
     function encodePostContext(bytes calldata allocatorData, bytes calldata sponsorSignature)
-        internal
+        external
         pure
         returns (bytes memory)
     {
@@ -383,8 +383,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
         bytes memory encodedBatch = Message.encodeBatchPost(claimants, claimHashes, scalingFactors);
 
-        require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
-
         sequence = _postMessage(uint32(MessagePackingType.BATCH_POST), encodedBatch);
 
         emit BatchPostEvent(chainId, claimHashes, sequence);
@@ -425,7 +423,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         uint32, // timestamp - unused
         uint32 nonce,
         uint16, // peerChain - unused (validated in parent)
-        bytes32, // peerAddress - unused (validated in parent)
+        bytes32 emitterAddress, 
         uint64, // sequence - unused
         uint8 // consistencyLevel - unused
     )
@@ -433,6 +431,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         override
     {
         MessagePackingType messageType = MessagePackingType(nonce);
+
+        _validateMessageSender(address(uint160(uint256(emitterAddress))));
 
         if (messageType == MessagePackingType.SINGLE_SEND) {
             _sendClaim(Message.decode(payload));
@@ -546,7 +546,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     }
 
     function _parseAndValidateVaa(bytes calldata encodedVaa, MessagePackingType expectedType)
-        internal
+        internal view
         returns (bytes calldata)
     {
         (, // timestamp (unused)
