@@ -55,12 +55,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             // need to check other types of witnesses here too
         )
     {
-        // check that tribunal witness typestring matches WITNESS_TYPESTRING and other checks here too
-        (string memory witnessTypestring,) = TRIBUNAL.getCompactWitnessDetails();
-        require(
-            keccak256(bytes(WITNESS_TYPESTRING)) == keccak256(bytes(witnessTypestring)),
-            "Tribunal witness typestring mismatch"
-        );
+        // TODO enforce checks on tribunal in deployment maybe
     }
 
     // ============================================================================

@@ -41,4 +41,6 @@ contract TribunalMock {
         uint256 factor = _claimReductionScalingFactor[claimHash];
         return factor == 0 ? 1e18 : factor; // Default to 1e18 if not set
     }
+
+    
 }
