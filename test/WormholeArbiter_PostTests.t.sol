@@ -543,6 +543,20 @@ contract WormholeArbiterPostTest is WormholeForkTest {
     function test_post_invalid_emitter_address() public {
     }
 
+    // test for post with invalid chain ID (unsupported chain)
+    function test_post_invalid_chain_id() public {
+        // TODO: Create a VAA with an unsupported Wormhole chain ID (e.g., 99)
+        // Expect revert with "Unsupported chain"
+        // Call WormholeArbiterBase.receivePost(encodedVaa)
+    }
+
+    // test for batch post with invalid chain ID (unsupported chain)
+    function test_batch_post_invalid_chain_id() public {
+        // TODO: Create a VAA with an unsupported Wormhole chain ID (e.g., 99)
+        // Expect revert with "Unsupported chain"
+        // Call WormholeArbiterBase.receiveBatchPost(encodedVaa, claims)
+    }
+
     // test for post with invalid nonce
     function test_post_invalid_nonce() public {
     }

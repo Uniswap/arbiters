@@ -578,6 +578,20 @@ contract WormholeArbiterTest is ExecutorTest {
     function test_executor_send_invalid_emitter_address() public {
     }
 
+    // test for executor send with invalid chain ID (unsupported chain)
+    function test_executor_send_invalid_chain_id() public {
+        // TODO: Mock executeVAAv1 to pass an unsupported Wormhole chain ID (e.g., 99)
+        // Expect revert with "Unsupported chain"
+        // This tests _executeVaa's chain ID validation
+    }
+
+    // test for batch send with invalid chain ID (unsupported chain)
+    function test_executor_batch_send_invalid_chain_id() public {
+        // TODO: Mock executeVAAv1 to pass an unsupported Wormhole chain ID (e.g., 99)
+        // Expect revert with "Unsupported chain"
+        // This tests _executeVaa's chain ID validation for batch messages
+    }
+
     // test for executor send with value not equal to 0 (WormholeExecutor.sol)
     function test_executor_send_value_not_zero() public {
     }
