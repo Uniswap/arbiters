@@ -481,6 +481,7 @@ contract MessageBatchPostTest is Test {
         // Create pattern: groups of 10 same claimants, all default scaling
         for (uint256 i = 0; i < count; i++) {
             // Use a large multiplier to ensure distinct claimants for each group
+            // forge-lint: disable-next-line(divide-before-multiply)
             claimants[i] = bytes32(uint256(CLAIMANT_1) + ((i / 10) * 1e30)); // Changes every 10 items
             claimHashes[i] = bytes32(uint256(CLAIM_HASH_1) + (i * 1e10));
             // All default for now to simplify

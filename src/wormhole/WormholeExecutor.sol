@@ -22,6 +22,7 @@ import {toUniversalAddress}        from "wormhole-sdk/Utils.sol";
 //      the "Base constructor arguments given twice" error that comes with it.
 
 abstract contract ExecutorSharedBase {
+  // forge-lint: disable-next-line(screaming-snake-case-immutable)
   ICoreBridge internal immutable _coreBridge;
 
   constructor(address coreBridge) {
@@ -30,7 +31,9 @@ abstract contract ExecutorSharedBase {
 }
 
 abstract contract ExecutorSendImpl is ExecutorSharedBase {
+  // forge-lint: disable-next-line(screaming-snake-case-immutable)
   IExecutor   internal immutable _executor;
+  // forge-lint: disable-next-line(screaming-snake-case-immutable)
   uint16      internal immutable _chainId;
 
   constructor(address executor) {
@@ -92,6 +95,7 @@ abstract contract ExecutorReceiveImpl is ExecutorSharedBase, IVaaV1Receiver {
     uint8   consistencyLevel
   ) internal virtual;
 
+  // forge-lint: disable-next-line(mixed-case-function)
   function executeVAAv1(bytes calldata multiSigVaa) external payable virtual {
     _executeVaaDefaultMsgValueCheck();
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
 import {Lock} from "the-compact/src/types/EIP712Types.sol";
 
 /**

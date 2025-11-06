@@ -1,6 +1,5 @@
 pragma solidity ^0.8.13;
 
-import {Test} from "forge-std/Test.sol";
 import {MockTheCompact} from "test/mocks/MockTheCompact.sol";
 import {TribunalMock} from "test/mocks/TribunalMock.sol";
 import {WormholeArbiter} from "src/WormholeArbiter.sol";
@@ -18,11 +17,15 @@ import {CHAIN_ID_ARBITRUM, CHAIN_ID_BASE} from "wormhole-solidity-sdk/constants/
 contract WormholeArbiterTest is ExecutorTest {
 
     //wormhole arbiters for arbitrum and base
+    // forge-lint: disable-next-line(mixed-case-variable)
     WormholeArbiter public WormholeArbiterArbitrum;
+    // forge-lint: disable-next-line(mixed-case-variable)
     WormholeArbiter public WormholeArbiterBase;
 
     //tribunals for arbitrum and base
+    // forge-lint: disable-next-line(mixed-case-variable)
     TribunalMock public TribunalMockArbitrum;
+    // forge-lint: disable-next-line(mixed-case-variable)
     TribunalMock public TribunalMockBase;
 
     //addresses to etch the tribunal and compact mock to
@@ -110,6 +113,7 @@ contract WormholeArbiterTest is ExecutorTest {
         );
 
         // Calculate total cost: ((destinationGasPrice × gasLimit × destinationPrice) / sourcePrice) + baseFee
+        // forge-lint: disable-next-line(mixed-case-variable)
         uint256 destinationCostInUSD = uint256(destinationGasPrice) * gasLimit * uint256(destinationPrice);
         uint256 costInSourceNative = destinationCostInUSD / uint256(sourcePrice);
         totalCost = costInSourceNative + uint256(baseFee);

@@ -15,9 +15,10 @@ library Message {
 
     /**
      * @notice Encodes send context for BATCH_SEND operations
-     * @dev Format: [flags(1)][allocator data (0 or 64)][sponsor data (0 or 64)][gasLimit (16)][totalCost (32)][signedQuote (variable)]
-     * @param allocatorData Allocator signature (0 or 64 bytes)
-     * @param sponsorSignature Sponsor signature (0 or 64 bytes)
+     * @dev Format: [flags(1)][allocatorDataLength(2)][allocatorData(variable)][sponsorSigLength(2)][sponsorSig(variable)][gasLimit(16)][totalCost(32)][signedQuote(variable)]
+     * @dev Length prefixes are uint16, allowing signatures from 0 to 65,535 bytes
+     * @param allocatorData Allocator signature (0 to 65,535 bytes)
+     * @param sponsorSignature Sponsor signature (0 to 65,535 bytes)
      * @param params Wormhole parameters (gasLimit, totalCost)
      * @param signedQuote Signed quote from relayer (variable length)
      * @return Encoded context bytes
@@ -92,8 +93,8 @@ library Message {
      * @notice Decodes send context from BATCH_SEND operations
      * @dev Inverse of encodeSendContext()
      * @param context Encoded context bytes
-     * @return allocatorData Allocator signature (0 or 64 bytes)
-     * @return sponsorSignature Sponsor signature (0 or 64 bytes)
+     * @return allocatorData Allocator signature (0 to 65,535 bytes)
+     * @return sponsorSignature Sponsor signature (0 to 65,535 bytes)
      * @return params Wormhole parameters (gasLimit, totalCost)
      * @return signedQuote Signed quote from relayer
      */
@@ -165,10 +166,11 @@ library Message {
 
     /**
      * @notice Encodes post context for BATCH_POST operations
-     * @dev Format: [flags(1)][allocator data (0 or 64)][sponsor data (0 or 64)]
+     * @dev Format: [flags(1)][allocatorDataLength(2)][allocatorData(variable)][sponsorSigLength(2)][sponsorSig(variable)]
+     * @dev Length prefixes are uint16, allowing signatures from 0 to 65,535 bytes
      * @dev IS_SEND flag is NOT set for post operations
-     * @param allocatorData Allocator signature (0 or 64 bytes)
-     * @param sponsorSignature Sponsor signature (0 or 64 bytes)
+     * @param allocatorData Allocator signature (0 to 65,535 bytes)
+     * @param sponsorSignature Sponsor signature (0 to 65,535 bytes)
      * @return Encoded context bytes
      */
     function encodePostContext(bytes calldata allocatorData, bytes calldata sponsorSignature)
@@ -224,8 +226,8 @@ library Message {
      * @notice Decodes post context from BATCH_POST operations
      * @dev Inverse of encodePostContext()
      * @param context Encoded context bytes
-     * @return allocatorData Allocator signature (0 or 64 bytes)
-     * @return sponsorSignature Sponsor signature (0 or 64 bytes)
+     * @return allocatorData Allocator signature (0 to 65,535 bytes)
+     * @return sponsorSignature Sponsor signature (0 to 65,535 bytes)
      */
     function decodePostContext(bytes calldata context)
         internal
@@ -278,15 +280,16 @@ library Message {
     /**
      * @notice Encodes a message with simplified format
      * @dev Format: [sponsor(20)][nonce(32)][expires(32)][witness(32)][claimant(32)][flags(1)]
-     *              [allocatorData(0|64)][sponsorSignature(0|64)][claimReductionScalingFactor(0|32)]
-     *              [commitments: lockTag(12)|token(20)|amount(32) repeated]
+     *              [allocatorDataLength(2)][allocatorData(variable)][sponsorSigLength(2)][sponsorSig(variable)]
+     *              [claimReductionScalingFactor(0|32)][commitments: lockTag(12)|token(20)|amount(32) repeated]
+     * @dev Length prefixes are uint16, allowing signatures from 0 to 65,535 bytes
      * @param sponsor The account to source the tokens from
      * @param nonce A parameter to enforce replay protection, scoped to allocator
      * @param expires The time at which the claim expires
      * @param witness Hash of the witness data
      * @param commitments Array of locks (lockTag, token, amount)
-     * @param allocatorData Authorization from the allocator (0 or 64 bytes)
-     * @param sponsorSignature Authorization from the sponsor (0 or 64 bytes)
+     * @param allocatorData Authorization from the allocator (0 to 65,535 bytes)
+     * @param sponsorSignature Authorization from the sponsor (0 to 65,535 bytes)
      * @param claimant The recipient of the claim
      * @param claimReductionScalingFactor Scaling factor for claim amounts (1e18 = no reduction)
      * @return Encoded message bytes
@@ -562,11 +565,15 @@ library Message {
             for (uint256 i = 0; i < length; ++i) {
                 // Check if claimant changes (or is first)
                 if (i == 0 || claimants[i] != claimants[i - 1]) {
+                    // advanced bitmap encoding scheme
+                    // forge-lint: disable-next-line(incorrect-shift)
                     changeClaimantsBitmap |= (1 << i);
                     claimantCount++;
                 }
                 // Check if scaling factor != 1e18
                 if (scalingFactors[i] != 1e18) {
+                    // advanced bitmap encoding scheme
+                    // forge-lint: disable-next-line(incorrect-shift)
                     scalingFactorsBitmap |= (1 << i);
                     nonDefaultFactorCount++;
                 }

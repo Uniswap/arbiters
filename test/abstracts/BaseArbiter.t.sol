@@ -9,7 +9,6 @@ import {Lock} from "the-compact/src/types/EIP712Types.sol";
 import {LOCK_TYPEHASH} from "the-compact/src/types/EIP712Types.sol";
 import {BatchClaim} from "lib/the-compact/src/types/BatchClaims.sol";
 import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
-import {ClaimHashLib} from "lib/the-compact/src/lib/ClaimHashLib.sol";
 import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 
 // Concrete implementation for testing

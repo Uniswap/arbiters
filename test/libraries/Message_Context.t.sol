@@ -210,6 +210,8 @@ contract MessageContextTest is Test {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
         bytes memory largeQuote = new bytes(1024);
         for (uint256 i = 0; i < 1024; i++) {
+            // casting to uint8 is safe because i % 256 is always in range [0, 255]
+            // forge-lint: disable-next-line(unsafe-typecast)
             largeQuote[i] = bytes1(uint8(i % 256));
         }
 
@@ -256,22 +258,37 @@ contract MessageContextTest is Test {
     }
 
 
-    /// @notice Fuzz test: encodeSendContext/decodeSendContext round trip
+    /// @notice Fuzz test: encodeSendContext/decodeSendContext round trip with variable-length signatures
     function testFuzz_sendContext_roundTrip(
-        bool hasAllocatorSig,
-        bool hasSponsorSig,
+        uint16 allocatorSigLength,
+        uint16 sponsorSigLength,
         uint128 gasLimit,
         uint256 totalCost,
-        uint16 quoteLength
+        uint16 quoteLength,
+        bytes32 randomSeed
     ) public view {
-        // Bound quote length to reasonable size
+        // Bound lengths to reasonable sizes for testing (0 to 2048 bytes)
+        // Testing up to uint16.max would be too expensive for fuzzing
+        allocatorSigLength = uint16(bound(allocatorSigLength, 0, 2048));
+        sponsorSigLength = uint16(bound(sponsorSigLength, 0, 2048));
         quoteLength = uint16(bound(quoteLength, 0, 2048));
 
-        // Create inputs
-        bytes memory allocatorData = hasAllocatorSig ? ALLOCATOR_SIG : new bytes(0);
-        bytes memory sponsorSig = hasSponsorSig ? SPONSOR_SIG : new bytes(0);
-        WormholeParams memory params = createWormholeParams(gasLimit, totalCost);
+        // Create variable-length signatures with pseudo-random data
+        bytes memory allocatorData = new bytes(allocatorSigLength);
+        bytes memory sponsorSig = new bytes(sponsorSigLength);
         bytes memory signedQuote = new bytes(quoteLength);
+
+        for (uint256 i = 0; i < allocatorSigLength; i++) {
+            allocatorData[i] = bytes1(uint8(uint256(keccak256(abi.encode(randomSeed, "allocator", i)))));
+        }
+        for (uint256 i = 0; i < sponsorSigLength; i++) {
+            sponsorSig[i] = bytes1(uint8(uint256(keccak256(abi.encode(randomSeed, "sponsor", i)))));
+        }
+        for (uint256 i = 0; i < quoteLength; i++) {
+            signedQuote[i] = bytes1(uint8(uint256(keccak256(abi.encode(randomSeed, "quote", i)))));
+        }
+
+        WormholeParams memory params = createWormholeParams(gasLimit, totalCost);
 
         // Encode
         bytes memory encoded = wrapper.encodeSendContext(allocatorData, sponsorSig, params, signedQuote);
@@ -372,11 +389,27 @@ contract MessageContextTest is Test {
         wrapper.decodePostContext(withTrailing);
     }
 
-    /// @notice Fuzz test: encodePostContext/decodePostContext round trip
-    function testFuzz_postContext_roundTrip(bool hasAllocatorSig, bool hasSponsorSig) public view {
-        // Create inputs
-        bytes memory allocatorData = hasAllocatorSig ? ALLOCATOR_SIG : new bytes(0);
-        bytes memory sponsorSig = hasSponsorSig ? SPONSOR_SIG : new bytes(0);
+    /// @notice Fuzz test: encodePostContext/decodePostContext round trip with variable-length signatures
+    function testFuzz_postContext_roundTrip(
+        uint16 allocatorSigLength,
+        uint16 sponsorSigLength,
+        bytes32 randomSeed
+    ) public view {
+        // Bound lengths to reasonable sizes for testing (0 to 2048 bytes)
+        // Testing up to uint16.max would be too expensive for fuzzing
+        allocatorSigLength = uint16(bound(allocatorSigLength, 0, 2048));
+        sponsorSigLength = uint16(bound(sponsorSigLength, 0, 2048));
+
+        // Create variable-length signatures with pseudo-random data
+        bytes memory allocatorData = new bytes(allocatorSigLength);
+        bytes memory sponsorSig = new bytes(sponsorSigLength);
+
+        for (uint256 i = 0; i < allocatorSigLength; i++) {
+            allocatorData[i] = bytes1(uint8(uint256(keccak256(abi.encode(randomSeed, "allocator", i)))));
+        }
+        for (uint256 i = 0; i < sponsorSigLength; i++) {
+            sponsorSig[i] = bytes1(uint8(uint256(keccak256(abi.encode(randomSeed, "sponsor", i)))));
+        }
 
         // Encode
         bytes memory encoded = wrapper.encodePostContext(allocatorData, sponsorSig);

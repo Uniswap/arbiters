@@ -1,12 +1,10 @@
 pragma solidity ^0.8.13;
 
-import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {MockTheCompact} from "test/mocks/MockTheCompact.sol";
 import {TribunalMock} from "test/mocks/TribunalMock.sol";
 import {WormholeArbiter} from "src/WormholeArbiter.sol";
-import {QuoteLib} from "lib/wormhole-solidity-sdk/src/testing/ExecutorTest.sol";
-import {WormholeParams, BatchSend, BatchClaimWithLocks, BatchPost} from "src/wormhole/WormholeTypes.sol";
+import {BatchClaimWithLocks, BatchPost} from "src/wormhole/WormholeTypes.sol";
 
 import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
 
@@ -21,11 +19,15 @@ contract WormholeArbiterPostTest is WormholeForkTest {
     using WormholeOverride for ICoreBridge;
 
     //wormhole arbiters for arbitrum and base
+    // forge-lint: disable-next-line(mixed-case-variable)
     WormholeArbiter public WormholeArbiterArbitrum;
+    // forge-lint: disable-next-line(mixed-case-variable)
     WormholeArbiter public WormholeArbiterBase;
 
     //tribunals for arbitrum and base
+    // forge-lint: disable-next-line(mixed-case-variable)
     TribunalMock public TribunalMockArbitrum;
+    // forge-lint: disable-next-line(mixed-case-variable)
     TribunalMock public TribunalMockBase;
 
     //addresses to etch the tribunal and compact mock to

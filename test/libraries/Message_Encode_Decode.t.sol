@@ -3,8 +3,7 @@ pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
 import {Message} from "../../src/libraries/Message.sol";
-import {BatchCompact, Lock} from "the-compact/src/types/EIP712Types.sol";
-import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
+import {Lock} from "the-compact/src/types/EIP712Types.sol";
 import {BatchClaim} from "the-compact/src/types/BatchClaims.sol";
 
 //TODO add encoding and decoding tests independently of each other
@@ -676,7 +675,9 @@ contract MessageTest is Test {
         // Create 50 locks
         Lock[] memory locks = new Lock[](50);
         for (uint256 i = 0; i < 50; i++) {
+            // casting to uint96 is safe because i + 1 is bounded by loop limit (50)
             locks[i] = Lock({
+                // forge-lint: disable-next-line(unsafe-typecast)
                 lockTag: bytes12(uint96(i + 1)),
                 token: address(uint160(uint256(keccak256(abi.encode(i))))),
                 amount: 1e18 * (i + 1)
