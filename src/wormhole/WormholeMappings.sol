@@ -53,4 +53,17 @@ library WormholeMappings {
         }
         revert("Unsupported chain");
     }
+
+    /// @notice Validate that a Wormhole chain ID is supported
+    /// @dev Max 3 comparisons (~45 gas) for 4 chains, reverts if unsupported
+    function validateChainId(uint16 wormholeChainId) internal pure {
+        if (wormholeChainId <= 23) {
+            if (wormholeChainId == 2) return; // Ethereum
+            if (wormholeChainId == 23) return; // Arbitrum
+        } else {
+            if (wormholeChainId == 30) return; // Base
+            if (wormholeChainId == 44) return; // Unichain
+        }
+        revert("Unsupported chain");
+    }
 }

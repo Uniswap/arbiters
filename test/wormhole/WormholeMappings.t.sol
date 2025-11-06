@@ -23,6 +23,10 @@ contract WormholeMappingsWrapper {
     function getWormholeExecutor(uint256 evmChainId) external pure returns (address) {
         return WormholeMappings.getWormholeExecutor(evmChainId);
     }
+
+    function validateChainId(uint16 wormholeChainId) external pure {
+        WormholeMappings.validateChainId(wormholeChainId);
+    }
 }
 
 /// @title WormholeMappingsTest
@@ -122,6 +126,65 @@ contract WormholeMappingsTest is Test {
         assertEq(WormholeMappings.getWormholeExecutor(UNICHAIN_EVM_ID), UNICHAIN_EXECUTOR);
         assertEq(WormholeMappings.getWormholeExecutor(BASE_EVM_ID), BASE_EXECUTOR);
         assertEq(WormholeMappings.getWormholeExecutor(ARBITRUM_EVM_ID), ARBITRUM_EXECUTOR);
+    }
+
+    // ============================================
+    // validateChainId Tests
+    // ============================================
+
+    /// @notice Test validateChainId accepts all supported chains
+    function test_validateChainId_allSupportedChains() public pure {
+        // All supported chains should not revert
+        WormholeMappings.validateChainId(ETHEREUM_WORMHOLE_ID);
+        WormholeMappings.validateChainId(ARBITRUM_WORMHOLE_ID);
+        WormholeMappings.validateChainId(BASE_WORMHOLE_ID);
+        WormholeMappings.validateChainId(UNICHAIN_WORMHOLE_ID);
+    }
+
+    /// @notice Test validateChainId reverts on unsupported Wormhole chain IDs
+    function test_validateChainId_revertsOnUnsupportedChain() public {
+        // Test various unsupported Wormhole chain IDs
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(0);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(1);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(3);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(22);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(24);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(29);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(31);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(43);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(45);
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(100);
+    }
+
+    /// @notice Fuzz test: verify arbitrary unsupported Wormhole chain IDs revert
+    function testFuzz_validateChainId_revertsOnUnsupportedChain(uint16 wormholeChainId) public {
+        // Skip supported chain IDs
+        vm.assume(
+            wormholeChainId != ETHEREUM_WORMHOLE_ID && wormholeChainId != ARBITRUM_WORMHOLE_ID
+                && wormholeChainId != BASE_WORMHOLE_ID && wormholeChainId != UNICHAIN_WORMHOLE_ID
+        );
+
+        vm.expectRevert("Unsupported chain");
+        wrapper.validateChainId(wormholeChainId);
     }
 
     // ============================================

@@ -422,7 +422,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         bytes calldata payload,
         uint32, // timestamp - unused
         uint32 nonce,
-        uint16, // peerChain - unused (validated in parent)
+        uint16 peerChain,
         bytes32 emitterAddress, 
         uint64, // sequence - unused
         uint8 // consistencyLevel - unused
@@ -432,6 +432,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     {
         MessagePackingType messageType = MessagePackingType(nonce);
 
+        WormholeMappings.validateChainId(peerChain);
+        
         _validateMessageSender(address(uint160(uint256(emitterAddress))));
 
         if (messageType == MessagePackingType.SINGLE_SEND) {
@@ -550,11 +552,14 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         returns (bytes calldata)
     {
         (, // timestamp (unused)
-            uint32 nonce,, // emitterChainId (unused)
+            uint32 nonce,
+            uint16 emitterChainId,
             bytes32 emitterAddress,, // sequence (unused)
             , // consistencyLevel (unused)
             bytes calldata payload
         ) = CoreBridgeLib.decodeAndVerifyVaaCd(address(_coreBridge), encodedVaa);
+
+        WormholeMappings.validateChainId(emitterChainId);
 
         _validateMessageSender(address(uint160(uint256(emitterAddress))));
 
