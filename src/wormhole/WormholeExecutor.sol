@@ -58,8 +58,6 @@ abstract contract ExecutorSendImpl is ExecutorSharedBase {
     sequence = _coreBridge.publishMessage{value: messageFee}(nonce, payload, consistencyLevel);
 
     bytes memory relayInstructions = RelayInstructionLib.encodeGas(gasLimit, msgVal);
-    if (extraRelayInstructions.length > 0)
-      relayInstructions = abi.encodePacked(relayInstructions, extraRelayInstructions);
 
     bytes32 peerAddress = bytes32(uint256(uint160(address(this))));
 
@@ -69,7 +67,7 @@ abstract contract ExecutorSendImpl is ExecutorSharedBase {
       peerAddress,
       refundAddress,
       signedQuote,
-      RequestLib.encodeVaaMultiSigRequest(_chainId, toUniversalAddress(address(this)), sequence),
+      RequestLib.encodeVaaMultiSigRequest(_chainId, peerAddress, sequence),
       relayInstructions
     );
   }}
