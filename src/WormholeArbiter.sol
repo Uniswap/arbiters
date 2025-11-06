@@ -432,8 +432,11 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     {
         MessagePackingType messageType = MessagePackingType(nonce);
 
+        // Validate chain ID to prevent messages from unsupported/compromised chains
+        // Even though emitterAddress is validated via CREATE2, a compromised chain
+        // could arbitrarily set storage slots to bypass immutability rules
         WormholeMappings.validateChainId(peerChain);
-        
+
         _validateMessageSender(address(uint160(uint256(emitterAddress))));
 
         if (messageType == MessagePackingType.SINGLE_SEND) {
@@ -559,6 +562,9 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             bytes calldata payload
         ) = CoreBridgeLib.decodeAndVerifyVaaCd(address(_coreBridge), encodedVaa);
 
+        // Validate chain ID to prevent messages from unsupported/compromised chains
+        // Even though emitterAddress is validated via CREATE2, a compromised chain
+        // could arbitrarily set storage slots to bypass immutability rules
         WormholeMappings.validateChainId(emitterChainId);
 
         _validateMessageSender(address(uint160(uint256(emitterAddress))));
