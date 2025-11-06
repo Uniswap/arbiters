@@ -159,80 +159,86 @@ contract MessageTest is Test {
     }
 
     //////////////////////////////////////////////////////////////
-    // SIGNATURE VALIDATION TESTS
+    // VALIDATION TESTS
     //////////////////////////////////////////////////////////////
 
-    /// @notice Test that encode reverts with invalid sponsor signature length
-    function test_encode_revertsOnInvalidSponsorSigLength() public {
+    /// @notice Test that encode reverts when allocator data exceeds uint16 max length
+    function test_encode_revertsOnAllocatorDataTooLong() public {
         Lock[] memory locks = createSingleLock();
 
-        // Test with invalid signature length (63 bytes)
-        bytes memory invalidSig = new bytes(63);
+        // Create allocator data that exceeds uint16.max (65535 bytes)
+        // We can't actually create a 65536+ byte array in a single test due to memory limits,
+        // but we can use vm.expectRevert with a crafted calldata
+        vm.expectRevert("allocator data too long");
 
-        vm.expectRevert("invalid signature length");
+        // This will fail in practice due to memory, but the revert check is what matters
+        bytes memory tooLong = new bytes(65536);
         wrapper.encode(
             SPONSOR,
             NONCE,
             EXPIRES,
             WITNESS,
             locks,
-            hex"", // empty allocator data
-            invalidSig,
-            CLAIMANT,
-            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
-        );
-
-        // Test with another invalid length (65 bytes)
-        invalidSig = new bytes(65);
-
-        vm.expectRevert("invalid signature length");
-        wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
+            tooLong,
             hex"",
-            invalidSig,
             CLAIMANT,
             CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
         );
     }
 
-    /// @notice Test that encode reverts with invalid allocator signature length
-    function test_encode_revertsOnInvalidAllocatorSigLength() public {
+    /// @notice Test that encode reverts when sponsor signature exceeds uint16 max length
+    function test_encode_revertsOnSponsorSignatureTooLong() public {
         Lock[] memory locks = createSingleLock();
 
-        // Test with invalid signature length (63 bytes)
-        bytes memory invalidSig = new bytes(63);
+        vm.expectRevert("sponsor signature too long");
 
-        vm.expectRevert("invalid signature length");
+        bytes memory tooLong = new bytes(65536);
         wrapper.encode(
             SPONSOR,
             NONCE,
             EXPIRES,
             WITNESS,
             locks,
-            invalidSig,
-            hex"", // empty sponsor signature
+            hex"",
+            tooLong,
+            CLAIMANT,
+            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+        );
+    }
+
+    /// @notice Test that encode succeeds with signatures at exactly uint16 max length
+    function test_encode_succeedsAtMaxLength() public view {
+        Lock[] memory locks = createSingleLock();
+
+        // Create signatures at exactly uint16.max (65535 bytes)
+        bytes memory maxLengthSig = new bytes(65535);
+
+        // Should not revert - exactly at the limit
+        bytes memory encoded = wrapper.encode(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            locks,
+            maxLengthSig,
+            maxLengthSig,
             CLAIMANT,
             CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
         );
 
-        // Test with another invalid length (1 byte)
-        invalidSig = new bytes(1);
-
-        vm.expectRevert("invalid signature length");
-        wrapper.encode(
+        // Verify it decodes correctly
+        BatchClaim memory decoded = wrapper.decode(encoded);
+        assertBatchClaimEqual(
             SPONSOR,
             NONCE,
             EXPIRES,
             WITNESS,
-            locks,
-            invalidSig,
-            hex"",
             CLAIMANT,
-            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+            maxLengthSig,
+            maxLengthSig,
+            locks,
+            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT,
+            decoded
         );
     }
 
@@ -536,13 +542,18 @@ contract MessageTest is Test {
         bytes32 witness,
         bytes32 claimant,
         uint256 scalingFactor,
-        bool hasAllocatorSig,
-        bool hasSponsorSig,
-        uint8 numLocks
+        uint16 allocatorSigLength,
+        uint16 sponsorSigLength,
+        uint8 numLocks,
+        bytes32 randomSeed
     ) public view {
         // Bound inputs to avoid overflows
         numLocks = uint8(bound(numLocks, 1, 10)); // 1 to 10 locks
         scalingFactor = bound(scalingFactor, 0.01e18, 2e18); // 1% to 200%
+        // Bound signature lengths to reasonable values (0 to 500 bytes for testing)
+        // Using 500 instead of 65535 to keep test execution reasonable
+        allocatorSigLength = uint16(bound(allocatorSigLength, 0, 500));
+        sponsorSigLength = uint16(bound(sponsorSigLength, 0, 500));
 
         // Create locks with safe amounts
         Lock[] memory locks = new Lock[](numLocks);
@@ -556,9 +567,17 @@ contract MessageTest is Test {
             }
         }
 
-        // Prepare signatures
-        bytes memory allocatorData = hasAllocatorSig ? ALLOCATOR_SIG : new bytes(0);
-        bytes memory sponsorSig = hasSponsorSig ? SPONSOR_SIG : new bytes(0);
+        // Prepare signatures with arbitrary lengths
+        bytes memory allocatorData = new bytes(allocatorSigLength);
+        bytes memory sponsorSig = new bytes(sponsorSigLength);
+
+        // Fill signatures with pseudo-random data
+        for (uint256 i = 0; i < allocatorSigLength; i++) {
+            allocatorData[i] = bytes1(uint8(uint256(keccak256(abi.encode(randomSeed, "allocator", i)))));
+        }
+        for (uint256 i = 0; i < sponsorSigLength; i++) {
+            sponsorSig[i] = bytes1(uint8(uint256(keccak256(abi.encode(randomSeed, "sponsor", i)))));
+        }
 
         // Encode
         bytes memory encoded;

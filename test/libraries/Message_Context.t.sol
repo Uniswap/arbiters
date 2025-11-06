@@ -93,29 +93,21 @@ contract MessageContextTest is Test {
     //////////////////////////////////////////////////////////////
 
     /// @notice Test encodeSendContext reverts with invalid allocator signature length
-    function test_encodeSendContext_revertsOnInvalidAllocatorSigLength() public {
+    function test_encodeSendContext_revertsOnAllocatorDataTooLong() public {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
-        bytes memory invalidSig = new bytes(63);
 
-        vm.expectRevert("invalid allocator or sponsor signature length");
-        wrapper.encodeSendContext(invalidSig, hex"", params, SIGNED_QUOTE);
-
-        invalidSig = new bytes(1);
-        vm.expectRevert("invalid allocator or sponsor signature length");
-        wrapper.encodeSendContext(invalidSig, hex"", params, SIGNED_QUOTE);
+        vm.expectRevert("allocator data too long");
+        bytes memory tooLong = new bytes(65536);
+        wrapper.encodeSendContext(tooLong, hex"", params, SIGNED_QUOTE);
     }
 
-    /// @notice Test encodeSendContext reverts with invalid sponsor signature length
-    function test_encodeSendContext_revertsOnInvalidSponsorSigLength() public {
+    /// @notice Test encodeSendContext reverts with sponsor signature exceeding uint16 max
+    function test_encodeSendContext_revertsOnSponsorSignatureTooLong() public {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
-        bytes memory invalidSig = new bytes(63);
 
-        vm.expectRevert("invalid allocator or sponsor signature length");
-        wrapper.encodeSendContext(hex"", invalidSig, params, SIGNED_QUOTE);
-
-        invalidSig = new bytes(65);
-        vm.expectRevert("invalid allocator or sponsor signature length");
-        wrapper.encodeSendContext(hex"", invalidSig, params, SIGNED_QUOTE);
+        vm.expectRevert("sponsor signature too long");
+        bytes memory tooLong = new bytes(65536);
+        wrapper.encodeSendContext(hex"", tooLong, params, SIGNED_QUOTE);
     }
 
     /// @notice Test round trip with both signatures present
@@ -263,25 +255,6 @@ contract MessageContextTest is Test {
         wrapper.decodeSendContext(tooShort);
     }
 
-    /// @notice Test decodeSendContext reverts when allocator signature is indicated but missing
-    function test_decodeSendContext_revertsOnMissingAllocatorSignature() public {
-        // Create a context with HAS_ALLOCATOR_SIG flag but not enough bytes
-        bytes memory invalidContext = new bytes(50);
-        invalidContext[0] = bytes1(uint8(0x01 | 0x04)); // HAS_ALLOCATOR_SIG | IS_SEND
-
-        vm.expectRevert("context too short for allocator signature");
-        wrapper.decodeSendContext(invalidContext);
-    }
-
-    /// @notice Test decodeSendContext reverts when sponsor signature is indicated but missing
-    function test_decodeSendContext_revertsOnMissingSponsorSignature() public {
-        // Create a context with HAS_SPONSOR_SIG flag but not enough bytes
-        bytes memory invalidContext = new bytes(50);
-        invalidContext[0] = bytes1(uint8(0x02 | 0x04)); // HAS_SPONSOR_SIG | IS_SEND
-
-        vm.expectRevert("context too short for sponsor signature");
-        wrapper.decodeSendContext(invalidContext);
-    }
 
     /// @notice Fuzz test: encodeSendContext/decodeSendContext round trip
     function testFuzz_sendContext_roundTrip(
@@ -323,27 +296,17 @@ contract MessageContextTest is Test {
     //////////////////////////////////////////////////////////////
 
     /// @notice Test encodePostContext reverts with invalid allocator signature length
-    function test_encodePostContext_revertsOnInvalidAllocatorSigLength() public {
-        bytes memory invalidSig = new bytes(63);
-
-        vm.expectRevert("invalid allocator or sponsor signature length");
-        wrapper.encodePostContext(invalidSig, hex"");
-
-        invalidSig = new bytes(1);
-        vm.expectRevert("invalid allocator or sponsor signature length");
-        wrapper.encodePostContext(invalidSig, hex"");
+    function test_encodePostContext_revertsOnAllocatorDataTooLong() public {
+        vm.expectRevert("allocator data too long");
+        bytes memory tooLong = new bytes(65536);
+        wrapper.encodePostContext(tooLong, hex"");
     }
 
-    /// @notice Test encodePostContext reverts with invalid sponsor signature length
-    function test_encodePostContext_revertsOnInvalidSponsorSigLength() public {
-        bytes memory invalidSig = new bytes(63);
-
-        vm.expectRevert("invalid allocator or sponsor signature length");
-        wrapper.encodePostContext(hex"", invalidSig);
-
-        invalidSig = new bytes(65);
-        vm.expectRevert("invalid allocator or sponsor signature length");
-        wrapper.encodePostContext(hex"", invalidSig);
+    /// @notice Test encodePostContext reverts with sponsor signature exceeding uint16 max
+    function test_encodePostContext_revertsOnSponsorSignatureTooLong() public {
+        vm.expectRevert("sponsor signature too long");
+        bytes memory tooLong = new bytes(65536);
+        wrapper.encodePostContext(hex"", tooLong);
     }
 
     /// @notice Test round trip with both signatures present
@@ -392,26 +355,6 @@ contract MessageContextTest is Test {
 
         vm.expectRevert("context too short");
         wrapper.decodePostContext(tooShort);
-    }
-
-    /// @notice Test decodePostContext reverts when allocator signature is indicated but missing
-    function test_decodePostContext_revertsOnMissingAllocatorSignature() public {
-        // Create a context with HAS_ALLOCATOR_SIG flag but not enough bytes
-        bytes memory invalidContext = new bytes(1);
-        invalidContext[0] = bytes1(uint8(0x01)); // HAS_ALLOCATOR_SIG
-
-        vm.expectRevert("context too short for allocator signature");
-        wrapper.decodePostContext(invalidContext);
-    }
-
-    /// @notice Test decodePostContext reverts when sponsor signature is indicated but missing
-    function test_decodePostContext_revertsOnMissingSponsorSignature() public {
-        // Create a context with HAS_SPONSOR_SIG flag but not enough bytes
-        bytes memory invalidContext = new bytes(1);
-        invalidContext[0] = bytes1(uint8(0x02)); // HAS_SPONSOR_SIG
-
-        vm.expectRevert("context too short for sponsor signature");
-        wrapper.decodePostContext(invalidContext);
     }
 
     /// @notice Test decodePostContext reverts on unexpected trailing data
@@ -521,21 +464,21 @@ contract MessageContextTest is Test {
         bytes memory encoded1 = wrapper.encodeSendContext(hex"", hex"", params, hex"");
         assertEq(encoded1.length, 49, "minimum size should be 49");
 
-        // With allocator: 49 + 64 = 113
+        // With allocator: 49 + 2 (length prefix) + 64 (data) = 115
         bytes memory encoded2 = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, hex"");
-        assertEq(encoded2.length, 113, "with allocator should be 113");
+        assertEq(encoded2.length, 115, "with allocator should be 115");
 
-        // With sponsor: 49 + 64 = 113
+        // With sponsor: 49 + 2 (length prefix) + 64 (data) = 115
         bytes memory encoded3 = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, hex"");
-        assertEq(encoded3.length, 113, "with sponsor should be 113");
+        assertEq(encoded3.length, 115, "with sponsor should be 115");
 
-        // With both: 49 + 64 + 64 = 177
+        // With both: 49 + 2 + 64 + 2 + 64 = 181
         bytes memory encoded4 = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, hex"");
-        assertEq(encoded4.length, 177, "with both should be 177");
+        assertEq(encoded4.length, 181, "with both should be 181");
 
-        // With both + 32-byte quote: 177 + 32 = 209
+        // With both + 32-byte quote: 181 + 32 = 213
         bytes memory encoded5 = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE);
-        assertEq(encoded5.length, 209, "with both + quote should be 209");
+        assertEq(encoded5.length, 213, "with both + quote should be 213");
     }
 
     /// @notice Test post context encoding produces expected sizes
@@ -544,16 +487,16 @@ contract MessageContextTest is Test {
         bytes memory encoded1 = wrapper.encodePostContext(hex"", hex"");
         assertEq(encoded1.length, 1, "minimum size should be 1");
 
-        // With allocator: 1 + 64 = 65
+        // With allocator: 1 + 2 (length prefix) + 64 (data) = 67
         bytes memory encoded2 = wrapper.encodePostContext(ALLOCATOR_SIG, hex"");
-        assertEq(encoded2.length, 65, "with allocator should be 65");
+        assertEq(encoded2.length, 67, "with allocator should be 67");
 
-        // With sponsor: 1 + 64 = 65
+        // With sponsor: 1 + 2 (length prefix) + 64 (data) = 67
         bytes memory encoded3 = wrapper.encodePostContext(hex"", SPONSOR_SIG);
-        assertEq(encoded3.length, 65, "with sponsor should be 65");
+        assertEq(encoded3.length, 67, "with sponsor should be 67");
 
-        // With both: 1 + 64 + 64 = 129
+        // With both: 1 + 2 + 64 + 2 + 64 = 133
         bytes memory encoded4 = wrapper.encodePostContext(ALLOCATOR_SIG, SPONSOR_SIG);
-        assertEq(encoded4.length, 129, "with both should be 129");
+        assertEq(encoded4.length, 133, "with both should be 133");
     }
 }

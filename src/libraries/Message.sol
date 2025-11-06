@@ -28,19 +28,22 @@ library Message {
         WormholeParams memory params,
         bytes calldata signedQuote
     ) internal pure returns (bytes memory) {
-        require(
-            (sponsorSignature.length == 0 || sponsorSignature.length == 64)
-                && (allocatorData.length == 0 || allocatorData.length == 64),
-            "invalid allocator or sponsor signature length"
-        );
-
         uint8 flags;
-        if (allocatorData.length == 64) flags |= HAS_ALLOCATOR_SIG;
-        if (sponsorSignature.length == 64) flags |= HAS_SPONSOR_SIG;
+        if (allocatorData.length > 0) {
+            require(allocatorData.length <= type(uint16).max, "allocator data too long");
+            flags |= HAS_ALLOCATOR_SIG;
+        }
+        if (sponsorSignature.length > 0) {
+            require(sponsorSignature.length <= type(uint16).max, "sponsor signature too long");
+            flags |= HAS_SPONSOR_SIG;
+        }
         flags |= IS_SEND;
 
-        // Calculate total size: 1 (flags) + allocatorData.length + sponsorSignature.length + 16 (gasLimit) + 32 (totalCost) + signedQuote.length
-        uint256 totalSize = 1 + allocatorData.length + sponsorSignature.length + 16 + 32 + signedQuote.length;
+        // Calculate total size: 1 (flags) + allocatorData + sponsorSignature + 16 (gasLimit) + 32 (totalCost) + signedQuote.length
+        // Each signature includes 2-byte length prefix when present
+        uint256 allocatorSize = allocatorData.length > 0 ? allocatorData.length + 2 : 0;
+        uint256 sponsorSize = sponsorSignature.length > 0 ? sponsorSignature.length + 2 : 0;
+        uint256 totalSize = 1 + allocatorSize + sponsorSize + 16 + 32 + signedQuote.length;
         bytes memory result = new bytes(totalSize);
 
         assembly ("memory-safe") {
@@ -50,16 +53,20 @@ library Message {
             mstore8(ptr, flags)
             ptr := add(ptr, 1)
 
-            // Copy allocator data if present (0 or 64 bytes)
+            // Copy allocator data if present (2-byte length prefix + data)
             if gt(allocatorData.length, 0) {
-                calldatacopy(ptr, allocatorData.offset, 64)
-                ptr := add(ptr, 64)
+                mstore(ptr, shl(240, allocatorData.length)) // Store uint16 at offset 0
+                ptr := add(ptr, 2)
+                calldatacopy(ptr, allocatorData.offset, allocatorData.length)
+                ptr := add(ptr, allocatorData.length)
             }
 
-            // Copy sponsor signature if present (0 or 64 bytes)
+            // Copy sponsor signature if present (2-byte length prefix + data)
             if gt(sponsorSignature.length, 0) {
-                calldatacopy(ptr, sponsorSignature.offset, 64)
-                ptr := add(ptr, 64)
+                mstore(ptr, shl(240, sponsorSignature.length)) // Store uint16 at offset 0
+                ptr := add(ptr, 2)
+                calldatacopy(ptr, sponsorSignature.offset, sponsorSignature.length)
+                ptr := add(ptr, sponsorSignature.length)
             }
 
             // Load params from memory
@@ -109,20 +116,32 @@ library Message {
 
         uint256 offset = 1;
 
-        // Read allocator data if present
+        // Read allocator data if present (2-byte length prefix + data)
         if ((flags & HAS_ALLOCATOR_SIG) != 0) {
-            require(context.length >= offset + 64, "context too short for allocator signature");
-            allocatorData = context[offset:offset + 64];
-            offset += 64;
+            require(context.length >= offset + 2, "context too short for allocator length");
+            uint16 allocatorLength;
+            assembly ("memory-safe") {
+                allocatorLength := shr(240, calldataload(add(context.offset, offset)))
+            }
+            offset += 2;
+            require(context.length >= offset + allocatorLength, "context too short for allocator signature");
+            allocatorData = context[offset:offset + allocatorLength];
+            offset += allocatorLength;
         } else {
             allocatorData = context[0:0];
         }
 
-        // Read sponsor signature if present
+        // Read sponsor signature if present (2-byte length prefix + data)
         if ((flags & HAS_SPONSOR_SIG) != 0) {
-            require(context.length >= offset + 64, "context too short for sponsor signature");
-            sponsorSignature = context[offset:offset + 64];
-            offset += 64;
+            require(context.length >= offset + 2, "context too short for sponsor length");
+            uint16 sponsorLength;
+            assembly ("memory-safe") {
+                sponsorLength := shr(240, calldataload(add(context.offset, offset)))
+            }
+            offset += 2;
+            require(context.length >= offset + sponsorLength, "context too short for sponsor signature");
+            sponsorSignature = context[offset:offset + sponsorLength];
+            offset += sponsorLength;
         } else {
             sponsorSignature = context[0:0];
         }
@@ -157,19 +176,22 @@ library Message {
         pure
         returns (bytes memory)
     {
-        require(
-            (sponsorSignature.length == 0 || sponsorSignature.length == 64)
-                && (allocatorData.length == 0 || allocatorData.length == 64),
-            "invalid allocator or sponsor signature length"
-        );
-
         uint8 flags;
-        if (allocatorData.length == 64) flags |= HAS_ALLOCATOR_SIG;
-        if (sponsorSignature.length == 64) flags |= HAS_SPONSOR_SIG;
+        if (allocatorData.length > 0) {
+            require(allocatorData.length <= type(uint16).max, "allocator data too long");
+            flags |= HAS_ALLOCATOR_SIG;
+        }
+        if (sponsorSignature.length > 0) {
+            require(sponsorSignature.length <= type(uint16).max, "sponsor signature too long");
+            flags |= HAS_SPONSOR_SIG;
+        }
         // Note: IS_SEND flag is NOT set for Post operations, set to 0
 
-        // Calculate total size: 1 (flags) + allocatorData.length + sponsorSignature.length
-        uint256 totalSize = 1 + allocatorData.length + sponsorSignature.length;
+        // Calculate total size: 1 (flags) + allocatorData + sponsorSignature
+        // Each signature includes 2-byte length prefix when present
+        uint256 allocatorSize = allocatorData.length > 0 ? allocatorData.length + 2 : 0;
+        uint256 sponsorSize = sponsorSignature.length > 0 ? sponsorSignature.length + 2 : 0;
+        uint256 totalSize = 1 + allocatorSize + sponsorSize;
         bytes memory result = new bytes(totalSize);
 
         assembly ("memory-safe") {
@@ -179,15 +201,19 @@ library Message {
             mstore8(ptr, flags)
             ptr := add(ptr, 1)
 
-            // Copy allocator data if present (0 or 64 bytes)
+            // Copy allocator data if present (2-byte length prefix + data)
             if gt(allocatorData.length, 0) {
-                calldatacopy(ptr, allocatorData.offset, 64)
-                ptr := add(ptr, 64)
+                mstore(ptr, shl(240, allocatorData.length)) // Store uint16 at offset 0
+                ptr := add(ptr, 2)
+                calldatacopy(ptr, allocatorData.offset, allocatorData.length)
+                ptr := add(ptr, allocatorData.length)
             }
 
-            // Copy sponsor signature if present (0 or 64 bytes)
+            // Copy sponsor signature if present (2-byte length prefix + data)
             if gt(sponsorSignature.length, 0) {
-                calldatacopy(ptr, sponsorSignature.offset, 64)
+                mstore(ptr, shl(240, sponsorSignature.length)) // Store uint16 at offset 0
+                ptr := add(ptr, 2)
+                calldatacopy(ptr, sponsorSignature.offset, sponsorSignature.length)
             }
         }
 
@@ -215,20 +241,32 @@ library Message {
 
         uint256 offset = 1;
 
-        // Read allocator data if present
+        // Read allocator data if present (2-byte length prefix + data)
         if ((flags & HAS_ALLOCATOR_SIG) != 0) {
-            require(context.length >= offset + 64, "context too short for allocator signature");
-            allocatorData = context[offset:offset + 64];
-            offset += 64;
+            require(context.length >= offset + 2, "context too short for allocator length");
+            uint16 allocatorLength;
+            assembly ("memory-safe") {
+                allocatorLength := shr(240, calldataload(add(context.offset, offset)))
+            }
+            offset += 2;
+            require(context.length >= offset + allocatorLength, "context too short for allocator signature");
+            allocatorData = context[offset:offset + allocatorLength];
+            offset += allocatorLength;
         } else {
             allocatorData = context[0:0];
         }
 
-        // Read sponsor signature if present
+        // Read sponsor signature if present (2-byte length prefix + data)
         if ((flags & HAS_SPONSOR_SIG) != 0) {
-            require(context.length >= offset + 64, "context too short for sponsor signature");
-            sponsorSignature = context[offset:offset + 64];
-            offset += 64;
+            require(context.length >= offset + 2, "context too short for sponsor length");
+            uint16 sponsorLength;
+            assembly ("memory-safe") {
+                sponsorLength := shr(240, calldataload(add(context.offset, offset)))
+            }
+            offset += 2;
+            require(context.length >= offset + sponsorLength, "context too short for sponsor signature");
+            sponsorSignature = context[offset:offset + sponsorLength];
+            offset += sponsorLength;
         } else {
             sponsorSignature = context[0:0];
         }
@@ -264,16 +302,16 @@ library Message {
         bytes32 claimant,
         uint256 claimReductionScalingFactor
     ) internal pure returns (bytes memory) {
-        require(
-            (sponsorSignature.length == 0 || sponsorSignature.length == 64)
-                && (allocatorData.length == 0 || allocatorData.length == 64),
-            "invalid signature length"
-        );
-
         // Calculate flags
         uint8 flags;
-        if (allocatorData.length == 64) flags |= HAS_ALLOCATOR_SIG;
-        if (sponsorSignature.length == 64) flags |= HAS_SPONSOR_SIG;
+        if (allocatorData.length > 0) {
+            require(allocatorData.length <= type(uint16).max, "allocator data too long");
+            flags |= HAS_ALLOCATOR_SIG;
+        }
+        if (sponsorSignature.length > 0) {
+            require(sponsorSignature.length <= type(uint16).max, "sponsor signature too long");
+            flags |= HAS_SPONSOR_SIG;
+        }
 
         uint256 scalingFactorSize = 0;
         if (claimReductionScalingFactor != 1e18) {
@@ -284,8 +322,10 @@ library Message {
         // Calculate total size
         // Fixed: 20 + 32 + 32 + 32 + 32 + 1 = 149
         // Variable: allocatorData + sponsorSignature + scalingFactor + commitments
-        uint256 totalSize =
-            149 + allocatorData.length + sponsorSignature.length + scalingFactorSize + (commitments.length * 64);
+        // Each signature includes 2-byte length prefix when present
+        uint256 allocatorSize = allocatorData.length > 0 ? allocatorData.length + 2 : 0;
+        uint256 sponsorSize = sponsorSignature.length > 0 ? sponsorSignature.length + 2 : 0;
+        uint256 totalSize = 149 + allocatorSize + sponsorSize + scalingFactorSize + (commitments.length * 64);
 
         bytes memory result = new bytes(totalSize);
 
@@ -302,16 +342,20 @@ library Message {
 
             ptr := add(ptr, 149)
 
-            // Copy allocator data if present (64 bytes)
+            // Copy allocator data if present (2-byte length prefix + data)
             if gt(allocatorData.length, 0) {
-                calldatacopy(ptr, allocatorData.offset, 64)
-                ptr := add(ptr, 64)
+                mstore(ptr, shl(240, allocatorData.length)) // Store uint16 at offset 0
+                ptr := add(ptr, 2)
+                calldatacopy(ptr, allocatorData.offset, allocatorData.length)
+                ptr := add(ptr, allocatorData.length)
             }
 
-            // Copy sponsor signature if present (64 bytes)
+            // Copy sponsor signature if present (2-byte length prefix + data)
             if gt(sponsorSignature.length, 0) {
-                calldatacopy(ptr, sponsorSignature.offset, 64)
-                ptr := add(ptr, 64)
+                mstore(ptr, shl(240, sponsorSignature.length)) // Store uint16 at offset 0
+                ptr := add(ptr, 2)
+                calldatacopy(ptr, sponsorSignature.offset, sponsorSignature.length)
+                ptr := add(ptr, sponsorSignature.length)
             }
 
             // Store claimReductionScalingFactor if not 1e18 (32 bytes)
@@ -387,20 +431,30 @@ library Message {
 
         uint256 offset = 149;
 
-        // Read allocator data if present
-        // Note: No length check needed - message integrity guaranteed by corresponding encode function 
-        // and checking to make sure the message came from corresponding arbiter. 
+        // Read allocator data if present (2-byte length prefix + data)
+        // Note: No length check needed - message integrity guaranteed by corresponding encode function
+        // and checking to make sure the message came from corresponding arbiter.
         if ((flags & HAS_ALLOCATOR_SIG) != 0) {
-            allocatorData = message[offset:offset + 64];
-            offset += 64;
+            uint16 allocatorLength;
+            assembly ("memory-safe") {
+                allocatorLength := shr(240, calldataload(add(message.offset, offset)))
+            }
+            offset += 2;
+            allocatorData = message[offset:offset + allocatorLength];
+            offset += allocatorLength;
         } else {
             allocatorData = message[0:0];
         }
 
-        // Read sponsor signature if present
+        // Read sponsor signature if present (2-byte length prefix + data)
         if ((flags & HAS_SPONSOR_SIG) != 0) {
-            sponsorSignature = message[offset:offset + 64];
-            offset += 64;
+            uint16 sponsorLength;
+            assembly ("memory-safe") {
+                sponsorLength := shr(240, calldataload(add(message.offset, offset)))
+            }
+            offset += 2;
+            sponsorSignature = message[offset:offset + sponsorLength];
+            offset += sponsorLength;
         } else {
             sponsorSignature = message[0:0];
         }
