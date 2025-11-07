@@ -274,6 +274,80 @@ contract MessageBatchPostTest is Test {
         assertArraysEqual(scalingFactors, decodedFactors, "factors");
     }
 
+    /// @notice Test round trip with single zero scaling factor (cancelled claim)
+    function test_batchPost_roundTrip_singleItem_zeroScaling() public view {
+        bytes32[] memory claimants = new bytes32[](1);
+        claimants[0] = CLAIMANT_1;
+
+        bytes32[] memory claimHashes = new bytes32[](1);
+        claimHashes[0] = CLAIM_HASH_1;
+
+        uint256[] memory scalingFactors = new uint256[](1);
+        scalingFactors[0] = 0; // Zero scaling factor = cancelled claim
+
+        bytes memory encoded = wrapper.encodeBatchPost(claimants, claimHashes, scalingFactors);
+        (bytes32[] memory decodedClaimants, bytes32[] memory decodedHashes, uint256[] memory decodedFactors) =
+            wrapper.decodeBatchPost(encoded);
+
+        assertArraysEqual(claimants, decodedClaimants, "claimants");
+        assertArraysEqual(claimHashes, decodedHashes, "hashes");
+        assertArraysEqual(scalingFactors, decodedFactors, "factors");
+    }
+
+    /// @notice Test round trip with all zero scaling factors
+    function test_batchPost_roundTrip_allZeroScaling() public view {
+        bytes32[] memory claimants = new bytes32[](3);
+        claimants[0] = CLAIMANT_1;
+        claimants[1] = CLAIMANT_2;
+        claimants[2] = CLAIMANT_3;
+
+        bytes32[] memory claimHashes = new bytes32[](3);
+        claimHashes[0] = CLAIM_HASH_1;
+        claimHashes[1] = CLAIM_HASH_2;
+        claimHashes[2] = CLAIM_HASH_3;
+
+        uint256[] memory scalingFactors = new uint256[](3);
+        scalingFactors[0] = 0;
+        scalingFactors[1] = 0;
+        scalingFactors[2] = 0;
+
+        bytes memory encoded = wrapper.encodeBatchPost(claimants, claimHashes, scalingFactors);
+        (bytes32[] memory decodedClaimants, bytes32[] memory decodedHashes, uint256[] memory decodedFactors) =
+            wrapper.decodeBatchPost(encoded);
+
+        assertArraysEqual(claimants, decodedClaimants, "claimants");
+        assertArraysEqual(claimHashes, decodedHashes, "hashes");
+        assertArraysEqual(scalingFactors, decodedFactors, "factors");
+    }
+
+    /// @notice Test round trip with mixed scaling including zero
+    function test_batchPost_roundTrip_mixedScalingWithZero() public view {
+        bytes32[] memory claimants = new bytes32[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            claimants[i] = CLAIMANT_1;
+        }
+
+        bytes32[] memory claimHashes = new bytes32[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            claimHashes[i] = bytes32(uint256(CLAIM_HASH_1) + i);
+        }
+
+        uint256[] memory scalingFactors = new uint256[](5);
+        scalingFactors[0] = SCALING_FACTOR_FULL; // Default
+        scalingFactors[1] = 0; // Zero (cancelled)
+        scalingFactors[2] = SCALING_FACTOR_HALF; // Reduced
+        scalingFactors[3] = 0; // Zero (cancelled)
+        scalingFactors[4] = SCALING_FACTOR_QUARTER; // Reduced
+
+        bytes memory encoded = wrapper.encodeBatchPost(claimants, claimHashes, scalingFactors);
+        (bytes32[] memory decodedClaimants, bytes32[] memory decodedHashes, uint256[] memory decodedFactors) =
+            wrapper.decodeBatchPost(encoded);
+
+        assertArraysEqual(claimants, decodedClaimants, "claimants");
+        assertArraysEqual(claimHashes, decodedHashes, "hashes");
+        assertArraysEqual(scalingFactors, decodedFactors, "factors");
+    }
+
     /// @notice Test round trip with complex mixed pattern
     function test_batchPost_roundTrip_complexMixed() public view {
         bytes32[] memory claimants = new bytes32[](10);

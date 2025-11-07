@@ -501,13 +501,20 @@ library Message {
                 // Pack lockTag + token into id
                 uint256 id = uint256(bytes32(lockTag)) | uint256(uint160(token));
 
-                // Calculate scaled amount for component
-                uint256 scaledAmount =
-                    claimReductionScalingFactor == 1e18 ? amount : ((amount * claimReductionScalingFactor) / 1e18);
+                // Create Component portions based on scaling factor
+                Component[] memory portions;
+                if (claimReductionScalingFactor == 0) {
+                    // Empty portions array for cancelled claims (zero scaling factor)
+                    portions = new Component[](0);
+                } else {
+                    // Calculate scaled amount for component
+                    uint256 scaledAmount =
+                        claimReductionScalingFactor == 1e18 ? amount : ((amount * claimReductionScalingFactor) / 1e18);
 
-                // Create single Component portion
-                Component[] memory portions = new Component[](1);
-                portions[0] = Component({claimant: uint256(claimant), amount: scaledAmount});
+                    // Create single Component portion
+                    portions = new Component[](1);
+                    portions[0] = Component({claimant: uint256(claimant), amount: scaledAmount});
+                }
 
                 // Create BatchClaimComponent
                 claims[i] = BatchClaimComponent({id: id, allocatedAmount: amount, portions: portions});

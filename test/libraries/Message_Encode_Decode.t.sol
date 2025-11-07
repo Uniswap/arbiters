@@ -134,22 +134,27 @@ contract MessageTest is Test {
 
             require(actual.claims[i].allocatedAmount == expectedLocks[i].amount, "allocatedAmount mismatch");
 
-            // Verify portions array has single element (for now until changes to support multiple portions)
-            require(actual.claims[i].portions.length == 1, "portions length should be 1");
-
-            require(
-                keccak256(abi.encodePacked(actual.claims[i].portions[0].claimant)) ==
-                    keccak256(abi.encodePacked(expectedClaimant)),
-                "claimant mismatch"
-            );
-
-            uint256 expectedScaledAmount;
-            if (claimReductionScalingFactor == 1e18) {
-                expectedScaledAmount = expectedLocks[i].amount;
+            // Handle zero scaling factor case (cancelled claims)
+            if (claimReductionScalingFactor == 0) {
+                require(actual.claims[i].portions.length == 0, "portions should be empty for zero scaling factor");
             } else {
-                expectedScaledAmount = (expectedLocks[i].amount * claimReductionScalingFactor) / 1e18;
+                // Verify portions array has single element
+                require(actual.claims[i].portions.length == 1, "portions length should be 1");
+
+                require(
+                    keccak256(abi.encodePacked(actual.claims[i].portions[0].claimant)) ==
+                        keccak256(abi.encodePacked(expectedClaimant)),
+                    "claimant mismatch"
+                );
+
+                uint256 expectedScaledAmount;
+                if (claimReductionScalingFactor == 1e18) {
+                    expectedScaledAmount = expectedLocks[i].amount;
+                } else {
+                    expectedScaledAmount = (expectedLocks[i].amount * claimReductionScalingFactor) / 1e18;
+                }
+                require(actual.claims[i].portions[0].amount == expectedScaledAmount, "scaled amount mismatch");
             }
-            require(actual.claims[i].portions[0].amount == expectedScaledAmount, "scaled amount mismatch");
         }
     }
 
@@ -401,6 +406,70 @@ contract MessageTest is Test {
             SPONSOR_SIG,
             locks,
             CLAIM_REDUCTION_SCALING_FACTOR_REDUCED,
+            decoded
+        );
+    }
+
+    /// @notice Test round trip with single lock and zero scaling factor (cancelled claim)
+    function test_roundTrip_singleLock_zeroScalingFactor() public view {
+        Lock[] memory locks = createSingleLock();
+
+        bytes memory encoded = wrapper.encode(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            locks,
+            ALLOCATOR_SIG,
+            SPONSOR_SIG,
+            CLAIMANT,
+            0 // Zero scaling factor = cancelled claim
+        );
+
+        BatchClaim memory decoded = wrapper.decode(encoded);
+
+        assertBatchClaimEqual(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            CLAIMANT,
+            ALLOCATOR_SIG,
+            SPONSOR_SIG,
+            locks,
+            0, // Zero scaling factor
+            decoded
+        );
+    }
+
+    /// @notice Test round trip with multiple locks and zero scaling factor
+    function test_roundTrip_multipleLocks_zeroScalingFactor() public view {
+        Lock[] memory locks = createMultipleLocks();
+
+        bytes memory encoded = wrapper.encode(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            locks,
+            ALLOCATOR_SIG,
+            SPONSOR_SIG,
+            CLAIMANT,
+            0 // Zero scaling factor = cancelled claim
+        );
+
+        BatchClaim memory decoded = wrapper.decode(encoded);
+
+        assertBatchClaimEqual(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            CLAIMANT,
+            ALLOCATOR_SIG,
+            SPONSOR_SIG,
+            locks,
+            0, // Zero scaling factor
             decoded
         );
     }

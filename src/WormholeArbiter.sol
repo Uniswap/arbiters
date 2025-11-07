@@ -514,17 +514,24 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
                     // Pack lockTag + token into id
                     uint256 id = uint256(bytes32(lock.lockTag)) | uint256(uint160(lock.token));
 
-                    // Calculate scaled amount
-                    uint256 scaledAmount = scalingFactors[i] == 1e18
-                        ? lock.amount
-                        : (lock.amount * scalingFactors[i]) / 1e18;
+                    // Create Component portions based on scaling factor
+                    Component[] memory portions;
+                    if (scalingFactors[i] == 0) {
+                        // Empty portions array for cancelled claims (zero scaling factor)
+                        portions = new Component[](0);
+                    } else {
+                        // Calculate scaled amount
+                        uint256 scaledAmount = scalingFactors[i] == 1e18
+                            ? lock.amount
+                            : (lock.amount * scalingFactors[i]) / 1e18;
 
-                    // Create single Component portion
-                    Component[] memory portions = new Component[](1);
-                    portions[0] = Component({
-                        claimant: uint256(claimants[i]),
-                        amount: scaledAmount
-                    });
+                        // Create single Component portion
+                        portions = new Component[](1);
+                        portions[0] = Component({
+                            claimant: uint256(claimants[i]),
+                            amount: scaledAmount
+                        });
+                    }
 
                     // Create BatchClaimComponent
                     batchClaimComponents[j] = BatchClaimComponent({

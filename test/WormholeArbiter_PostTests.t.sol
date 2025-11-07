@@ -7,6 +7,9 @@ import {WormholeArbiter} from "src/WormholeArbiter.sol";
 import {BatchClaimWithLocks, BatchPost} from "src/wormhole/WormholeTypes.sol";
 
 import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
+import {BatchClaim, BatchClaimComponent} from "the-compact/src/types/BatchClaims.sol";
+import {Component} from "the-compact/src/types/Components.sol";
+import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 
 import {WormholeForkTest} from "wormhole-solidity-sdk/testing/WormholeForkTest.sol";
 import {WormholeOverride} from "wormhole-solidity-sdk/testing/WormholeOverride.sol";
@@ -567,6 +570,142 @@ contract WormholeArbiterPostTest is WormholeForkTest {
 
     // test to make sure batch post is correctly applying scaling factors
     function test_batch_post_scaling_factors() public {
+        // set to arbitrum
+        selectFork(CHAIN_ID_ARBITRUM);
+
+        // set message fees to 0
+        setMessageFee(0 gwei);
+
+        // Create 3 claims with different scaling factors:
+        // 1. Full scaling (1e18) - normal claim
+        // 2. Reduced scaling (0.5e18) - partially reduced claim
+        // 3. Zero scaling (0) - cancelled claim
+        Lock[] memory locks1 = createSingleLock();
+        Lock[] memory locks2 = createMultipleLocks();
+        Lock[] memory locks3 = createSingleLock();
+
+        // Create claim 1 with full scaling factor
+        uint256 nonce1 = NONCE;
+        bytes32 witness1 = WITNESS;
+        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, nonce1, EXPIRES, witness1, locks1);
+        TribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
+        // Don't set scaling factor - defaults to 1e18
+
+        // Create claim 2 with reduced scaling factor (0.5e18)
+        uint256 nonce2 = NONCE + 1;
+        bytes32 witness2 = keccak256("witness2");
+        bytes32 claimHash2 = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, nonce2, EXPIRES, witness2, locks2);
+        TribunalMockArbitrum.setFilled(claimHash2, CLAIMANT);
+        TribunalMockArbitrum.setClaimReductionScalingFactor(claimHash2, 0.5e18); // 50% reduction
+
+        // Create claim 3 with zero scaling factor (cancelled)
+        uint256 nonce3 = NONCE + 2;
+        bytes32 witness3 = keccak256("witness3");
+        bytes32 claimHash3 = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, nonce3, EXPIRES, witness3, locks3);
+        TribunalMockArbitrum.setFilled(claimHash3, CLAIMANT);
+        TribunalMockArbitrum.setClaimReductionScalingFactor(claimHash3, type(uint256).max); // Cancelled → returns 0
+
+        // Verify scaling factors are set correctly
+        assertEq(TribunalMockArbitrum.claimReductionScalingFactor(claimHash1), 1e18, "Claim 1 should have full scaling");
+        assertEq(TribunalMockArbitrum.claimReductionScalingFactor(claimHash2), 0.5e18, "Claim 2 should have 50% scaling");
+        assertEq(TribunalMockArbitrum.claimReductionScalingFactor(claimHash3), 0, "Claim 3 should have zero scaling");
+
+        // Construct claim hash array for batch
+        bytes32[] memory claimHashes = new bytes32[](3);
+        claimHashes[0] = claimHash1;
+        claimHashes[1] = claimHash2;
+        claimHashes[2] = claimHash3;
+
+        // Send batch post
+        vm.prank(filler);
+        vm.recordLogs();
+        WormholeArbiterArbitrum.batchPost(BASE_CHAIN_ID_STANDARD, claimHashes);
+
+        // Fetch the VAA
+        bytes memory encodedVaa = fetchEncodedVaa();
+
+        // Construct BatchClaimWithLocks array for relay
+        BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](3);
+        claims[0] = BatchClaimWithLocks({
+            sponsor: SPONSOR,
+            nonce: nonce1,
+            expires: EXPIRES,
+            witness: witness1,
+            allocatorData: bytes(""),
+            sponsorSignature: bytes(""),
+            commitments: locks1
+        });
+        claims[1] = BatchClaimWithLocks({
+            sponsor: SPONSOR,
+            nonce: nonce2,
+            expires: EXPIRES,
+            witness: witness2,
+            allocatorData: bytes(""),
+            sponsorSignature: bytes(""),
+            commitments: locks2
+        });
+        claims[2] = BatchClaimWithLocks({
+            sponsor: SPONSOR,
+            nonce: nonce3,
+            expires: EXPIRES,
+            witness: witness3,
+            allocatorData: bytes(""),
+            sponsorSignature: bytes(""),
+            commitments: locks3
+        });
+
+        // Switch to base and verify claim hashes are not set yet
+        selectFork(CHAIN_ID_BASE);
+        assertFalse(compactMock.getClaimHash(claimHash1), "Claim 1 should not be set yet");
+        assertFalse(compactMock.getClaimHash(claimHash2), "Claim 2 should not be set yet");
+        assertFalse(compactMock.getClaimHash(claimHash3), "Claim 3 should not be set yet");
+
+        // Set expectation for 1 call to arbiter receiveBatchPost
+        vm.expectCall(
+            address(WormholeArbiterBase),
+            abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa, claims))
+        );
+
+        // Construct expected BatchClaim for claim 3 (cancelled claim with zero scaling factor)
+        // This should have empty portions arrays
+        BatchClaimComponent[] memory expectedClaim3Components = new BatchClaimComponent[](1);
+        uint256 expectedId3 = uint256(bytes32(locks3[0].lockTag)) | uint256(uint160(locks3[0].token));
+        expectedClaim3Components[0] = BatchClaimComponent({
+            id: expectedId3,
+            allocatedAmount: locks3[0].amount,
+            portions: new Component[](0) // Empty portions for zero scaling factor
+        });
+
+        BatchClaim memory expectedClaim3 = BatchClaim({
+            allocatorData: bytes(""),
+            sponsorSignature: bytes(""),
+            sponsor: SPONSOR,
+            nonce: nonce3,
+            expires: EXPIRES,
+            witness: witness3,
+            witnessTypestring: WITNESS_TYPESTRING,
+            claims: expectedClaim3Components
+        });
+
+        // Expect that compactMock.batchClaim is called with the claim that has empty portions
+        vm.expectCall(
+            address(compactMock),
+            abi.encodeCall(compactMock.batchClaim, (expectedClaim3))
+        );
+
+        // Filler self-relays the batch post
+        // This will internally apply the scaling factors when constructing BatchClaimComponents
+        vm.prank(filler);
+        WormholeArbiterBase.receiveBatchPost(encodedVaa, claims);
+
+        // Check that all claim hashes are set as marked in the mock compact
+        // This verifies that claims with all scaling factors (full, reduced, zero) were processed
+        assertTrue(compactMock.getClaimHash(claimHash1), "Claim 1 should be set");
+        assertTrue(compactMock.getClaimHash(claimHash2), "Claim 2 should be set");
+        assertTrue(compactMock.getClaimHash(claimHash3), "Claim 3 (cancelled) should be set");
+
+        // Verify that we got exactly 3 batchClaim calls (one for each claim)
+        assertEq(compactMock.getCallCount(), 3, "Should have 3 batchClaim calls");
     }
 
     // test to make sure batch post is correctly applying claimants

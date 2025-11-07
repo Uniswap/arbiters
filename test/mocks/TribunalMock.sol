@@ -40,8 +40,15 @@ contract TribunalMock {
     }
 
     function claimReductionScalingFactor(bytes32 claimHash) external view returns (uint256) {
-        uint256 factor = _claimReductionScalingFactor[claimHash];
-        return factor == 0 ? 1e18 : factor; // Default to 1e18 if not set
+        uint256 storedFactor = _claimReductionScalingFactor[claimHash];
+        // Match real Tribunal behavior:
+        // - type(uint256).max (cancelled) → return 0
+        // - 0 (not set) → return 1e18 (default)
+        // - other value → return that value
+        if (storedFactor == type(uint256).max) {
+            return 0; // Cancelled claim
+        }
+        return storedFactor == 0 ? 1e18 : storedFactor;
     }
 
     /**
