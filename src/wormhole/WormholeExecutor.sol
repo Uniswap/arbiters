@@ -52,7 +52,7 @@ abstract contract ExecutorSendImpl is ExecutorSharedBase {
     uint128 gasLimit,
     uint128 msgVal,
     uint32 nonce,
-    bytes memory extraRelayInstructions
+    bytes memory /* extraRelayInstructions */
   ) internal returns (uint64 sequence) { unchecked {
     uint messageFee = _coreBridge.messageFee();
     sequence = _coreBridge.publishMessage{value: messageFee}(nonce, payload, consistencyLevel);
