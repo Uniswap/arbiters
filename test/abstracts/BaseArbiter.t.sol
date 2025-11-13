@@ -56,8 +56,8 @@ contract BaseArbiterTest is Test {
     TribunalMock public tribunalMock;
     MockTheCompact public compactMock;
 
-    address constant TRIBUNAL_ADDRESS = 0x0000000000000000000000000000000000001111;
     address constant THE_COMPACT_ADDRESS = 0x00000000000000171ede64904551eeDF3C6C9788;
+    address public TRIBUNAL_ADDRESS;
 
     // Test constants
     address constant SPONSOR = 0x1111111111111111111111111111111111111111;
@@ -67,6 +67,10 @@ contract BaseArbiterTest is Test {
     bytes32 constant CLAIMANT = 0x9999999999999999999999999999999999999999999999999999999999999999;
 
     function setUp() public {
+        // Deploy the testable arbiter first to get TRIBUNAL_ADDRESS
+        arbiter = new TestableBaseArbiter();
+        TRIBUNAL_ADDRESS = arbiter.TRIBUNAL_ADDRESS();
+
         // Deploy TribunalMock and etch it to the expected address
         TribunalMock mockTribunal = new TribunalMock();
         vm.etch(TRIBUNAL_ADDRESS, address(mockTribunal).code);
@@ -76,9 +80,6 @@ contract BaseArbiterTest is Test {
         MockTheCompact mockCompact = new MockTheCompact();
         vm.etch(THE_COMPACT_ADDRESS, address(mockCompact).code);
         compactMock = MockTheCompact(THE_COMPACT_ADDRESS);
-
-        // Deploy the testable arbiter
-        arbiter = new TestableBaseArbiter();
     }
 
     // Helper function to create a single lock

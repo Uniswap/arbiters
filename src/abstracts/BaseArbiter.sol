@@ -17,8 +17,9 @@ import {LOCK_TYPEHASH} from "the-compact/src/types/EIP712Types.sol";
 abstract contract BaseArbiter {
     using FixedPointMathLib for uint256;
 
+    address public constant TRIBUNAL_ADDRESS = 0x000000000000790009689f43bAedb61D67D45bB8; // TODO: Set actual Tribunal address for production    
     ITheCompactClaims public immutable THE_COMPACT = ITheCompactClaims(0x00000000000000171ede64904551eeDF3C6C9788);
-    ITribunal public immutable TRIBUNAL = ITribunal(0x0000000000000000000000000000000000001111); // TODO: Set actual Tribunal address
+    ITribunal public immutable TRIBUNAL = ITribunal(TRIBUNAL_ADDRESS);
     uint256 public immutable BASE_SCALING_FACTOR = 1e18;
 
     /**

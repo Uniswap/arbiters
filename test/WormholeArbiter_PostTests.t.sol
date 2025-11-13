@@ -4,6 +4,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {MockTheCompact} from "test/mocks/MockTheCompact.sol";
 import {TribunalMock} from "test/mocks/TribunalMock.sol";
 import {WormholeArbiter} from "src/WormholeArbiter.sol";
+import {BaseArbiter} from "src/abstracts/BaseArbiter.sol";
 import {BatchClaimWithLocks, BatchPost} from "src/wormhole/WormholeTypes.sol";
 
 import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
@@ -34,7 +35,6 @@ contract WormholeArbiterPostTest is WormholeForkTest {
     TribunalMock public TribunalMockBase;
 
     //addresses to etch the tribunal and compact mock to
-    address constant TRIBUNAL_ADDRESS = 0x0000000000000000000000000000000000001111;
     address constant THE_COMPACT_ADDRESS = 0x00000000000000171ede64904551eeDF3C6C9788;
     MockTheCompact public compactMock;
 
@@ -96,13 +96,14 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         filler = makeAddr("filler");
         vm.deal(filler, 5 ether); // Fund it
 
+        // Deploy WormholeArbiter at deterministic address first to get TRIBUNAL_ADDRESS
+        WormholeArbiterArbitrum = new WormholeArbiter{salt: salt}();
+        address TRIBUNAL_ADDRESS = WormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+
         // Deploy TribunalMock and set its code to TRIBUNAL_ADDRESS
         TribunalMock arbitrumTribunalMock = new TribunalMock();
         vm.etch(TRIBUNAL_ADDRESS, address(arbitrumTribunalMock).code);
         TribunalMockArbitrum = TribunalMock(TRIBUNAL_ADDRESS);
-
-        // Deploy WormholeArbiter at deterministic address
-        WormholeArbiterArbitrum = new WormholeArbiter{salt: salt}();
 
         // --- Deploy Tribunal, MockTheCompact, and WormholeArbiter on Base fork ---
         selectFork(CHAIN_ID_BASE);
@@ -111,13 +112,13 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         filler = makeAddr("filler");
         vm.deal(filler, 5 ether); // Fund it
 
+        // Deploy WormholeArbiter at deterministic address (same TRIBUNAL_ADDRESS)
+        WormholeArbiterBase = new WormholeArbiter{salt: salt}();
+
         // Deploy TribunalMock and set its code to TRIBUNAL_ADDRESS
         TribunalMock baseTribunalMock = new TribunalMock();
         vm.etch(TRIBUNAL_ADDRESS, address(baseTribunalMock).code);
         TribunalMockBase = TribunalMock(TRIBUNAL_ADDRESS);
-
-        // Deploy WormholeArbiter at deterministic address
-        WormholeArbiterBase = new WormholeArbiter{salt: salt}();
 
         // deploy the compact mock
         MockTheCompact deployedCompactMock = new MockTheCompact();
@@ -129,6 +130,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
 
     function test_deployments_success() public view {
         //assert that the tribunals are deployed to the same address on both forks
+        address TRIBUNAL_ADDRESS = WormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
         assertEq(address(TribunalMockArbitrum), TRIBUNAL_ADDRESS);
         assertEq(address(TribunalMockBase), TRIBUNAL_ADDRESS);
 
@@ -136,7 +138,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         assertEq(address(WormholeArbiterArbitrum), address(WormholeArbiterBase));
         assertTrue(address(WormholeArbiterArbitrum) != address(0));
 
-        //assert that the compact mock is etched to the Compact address 
+        //assert that the compact mock is etched to the Compact address
         assertEq(address(compactMock), THE_COMPACT_ADDRESS);
     }
 
