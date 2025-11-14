@@ -41,7 +41,7 @@ abstract contract BaseArbiter {
 
     /**
      * @notice Internal function to refund excess ETH to msg.sender
-     * @dev Refunds entire contract balance to msg.sender
+     * @dev Refunds entire contract balance to msg.sender after function execution.
      */
     function _refundExcessEth() internal {
         uint256 toRefund = address(this).balance;
@@ -53,10 +53,14 @@ abstract contract BaseArbiter {
 
     /**
      * @notice Internal function to submit a batch claim to The Compact
-     * @dev Accepts a fully constructed BatchClaim and submits it to THE_COMPACT.batchClaim()
+     * @dev Accepts a fully constructed BatchClaim and submits it to THE_COMPACT.batchClaim().
+     *      Can be overridden by inheriting contracts if custom claim submission logic is needed.
+     *
+     * @param claimPayload The fully constructed BatchClaim to submit
+     *
+     * @return claimHash The hash of the submitted claim returned by The Compact
      */
-    // override if modifications are needed
-    function _sendClaim(BatchClaim memory claimPayload) internal returns (bytes32 claimHash) {
+    function _sendClaim(BatchClaim memory claimPayload) internal virtual returns (bytes32 claimHash) {
         claimHash = THE_COMPACT.batchClaim(claimPayload);
         return claimHash;
     }
@@ -143,16 +147,21 @@ abstract contract BaseArbiter {
     }
 
     /**
-     * @notice Validates a claim against Tribunal records
+     * @notice Validates a claim against Tribunal records and retrieves claim metadata
      * @dev Validates that:
      *      - Claim has been filled in Tribunal (via filled())
      *      - Claim hash is correctly derived from locks
+     *      - Returns claimant, claimHash, and scaling factor from Tribunal
+     *
      * @param sponsor The account to source tokens from
      * @param nonce Replay protection nonce
      * @param expires Expiration timestamp
      * @param witness Hash of the witness (mandate) data
      * @param locks Array of locks to validate
+     *
      * @return claimHash The validated EIP-712 claim hash
+     * @return claimant The bytes32 claimant identifier returned by Tribunal.filled()
+     * @return claimReductionScalingFactor The scaling factor from Tribunal (1e18 = no reduction, 0 = cancelled)
      */
     function _validateBatchClaim(
         address sponsor,

@@ -7,10 +7,22 @@ import {BatchClaim} from "lib/the-compact/src/types/BatchClaims.sol";
 import {BatchClaimWithLocks, WormholeParams} from "../wormhole/WormholeTypes.sol";
 import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 
+/**
+ * @title Message
+ * @notice Library for encoding and decoding cross-chain arbiter messages
+ * @dev Handles SEND (automatic relay) and POST (user self-relay) message formats with bitmap compression
+ */
 library Message {
+    /// @dev Flag bit 0: Allocator signature is present in the message
     uint8 constant HAS_ALLOCATOR_SIG = 0x01;
+
+    /// @dev Flag bit 1: Sponsor signature is present in the message
     uint8 constant HAS_SPONSOR_SIG = 0x02;
+
+    /// @dev Flag bit 2: Message is a SEND operation (vs POST operation)
     uint8 constant IS_SEND = 0x04;
+
+    /// @dev Flag bit 3: Claim reduction scaling factor is present (not 1e18)
     uint8 constant HAS_CLAIM_REDUCTION = 0x08;
 
     /**

@@ -24,6 +24,12 @@ struct BatchPost {
     uint256[] scalingFactors; // The scaling factors for each claim (1e18 = no reduction)
 }
 
+
+/**
+ * @notice Represents a batch send operation for transmitting claims to a destination chain
+ * @dev Used for BATCH_SEND message packing type in Wormhole cross-chain messaging
+ */
+
 struct BatchSend{
     uint256 chainId; //chainId where the resource locks live
     BatchClaimWithLocks[] claims; // array of claims to send
@@ -33,9 +39,10 @@ struct BatchSend{
 }
 
 /**
- * @notice Represents a batch of full message data for a single destination chain
- * @dev Used for BATCH_POST operations where compact with commitments is provided
+ * @notice Used for both batch send (sending a batch of sends) and for batch post (providing corresponding claim data for a self-relay)
+ * @dev This struct is shared between BATCH_SEND operations (relayer sending multiple claims) and BATCH_POST operations (user self-relaying multiple claim hashes and scaling factors)
  */
+
 struct BatchClaimWithLocks {
     address sponsor; // The account to source the tokens from.
     uint256 nonce; // A parameter to enforce replay protection, scoped to allocator.
