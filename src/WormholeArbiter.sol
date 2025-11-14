@@ -5,6 +5,7 @@ import {BatchClaim} from "lib/the-compact/src/types/BatchClaims.sol";
 import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
 import {BatchCompact, Lock} from "the-compact/src/types/EIP712Types.sol";
 import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
+import {IDispatchCallback} from "tribunal/interfaces/IDispatchCallback.sol";
 import {ExecutorSendReceive} from "./wormhole/WormholeExecutor.sol";
 import {CoreBridgeLib} from "wormhole-sdk/libraries/CoreBridge.sol";
 import {WormholeMappings} from "./wormhole/WormholeMappings.sol";
@@ -17,31 +18,11 @@ import {BaseArbiter} from "./abstracts/BaseArbiter.sol";
  * @dev Implements bidirectional message flow between fill chains and claim chains
  */
 
-interface IDispatchCallback {
-    /**
-     * @notice Callback function to be called by the Tribunal contract after a fill is completed.
-     * @return This function selector to confirm successful execution.
-     */
-    function dispatchCallback(
-        uint256 chainId,
-        BatchCompact calldata compact,
-        bytes32 mandateHash,
-        bytes32 claimHash,
-        bytes32 claimant,
-        uint256 claimReductionScalingFactor,
-        uint256[] calldata claimAmounts,
-        bytes calldata context
-    ) external payable returns (bytes4);
-}
-
 contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter {
     using Message for bytes;
 
     uint8 constant CONSISTENCY_LEVEL = 201; // safe for now. maybe custom in the future
     uint16 constant MAX_MESSAGE_SIZE = 5_000; // 5KB -- solana can only do 1232 bytes so maybe need to reduce
-
-    bytes4 constant DISPATCH_CALLBACK_SELECTOR =
-        bytes4(keccak256("dispatchCallback(bytes32,bytes32,bytes32,bytes32,uint256,uint256[],bytes)"));
 
     event SingleSendEvent(uint256 indexed chainId, bytes32 indexed claimHash, uint64 indexed sequence);
     event SinglePostEvent(uint256 indexed chainId, bytes32 indexed claimHash, uint64 indexed sequence);
@@ -55,7 +36,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             // need to check other types of witnesses here too
         )
     {
-        // TODO enforce checks on tribunal in deployment maybe
+        // TODO enforce checks on tribunal in deployment maybe?
     }
 
     // ============================================================================
@@ -123,7 +104,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             );
         }
 
-        return DISPATCH_CALLBACK_SELECTOR;
+        return IDispatchCallback.dispatchCallback.selector;
     }
 
     function encodeSendContext(
