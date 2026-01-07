@@ -172,6 +172,7 @@ library Message {
         offset += 48;
 
         // Read signedQuote (remaining bytes)
+        // TODO: add a minimum length check for signed quote here per logic in https://github.com/wormholelabs-xyz/example-messaging-executor/blob/main/evm/src/Executor.sol
         require(context.length >= offset, "context too short for signedQuote");
         signedQuote = context[offset:];
     }
