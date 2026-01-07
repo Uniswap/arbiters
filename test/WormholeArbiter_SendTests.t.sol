@@ -12,11 +12,9 @@ import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
 import {ExecutorTest} from "wormhole-solidity-sdk/testing/ExecutorTest.sol";
 import {CHAIN_ID_ARBITRUM, CHAIN_ID_BASE} from "wormhole-solidity-sdk/constants/Chains.sol";
 
-
 // for send tests, using this as an example: https://github.com/wormhole-foundation/wormhole-solidity-sdk/blob/main/test/Executor.t.sol
 
 contract WormholeArbiterTest is ExecutorTest {
-
     //wormhole arbiters for arbitrum and base
     // forge-lint: disable-next-line(mixed-case-variable)
     WormholeArbiter public WormholeArbiterArbitrum;
@@ -98,18 +96,18 @@ contract WormholeArbiterTest is ExecutorTest {
         uint64 expiryTime = uint64(block.timestamp + 1 hours);
 
         signedQuote = QuoteLib.signAndPackQuote(
-        QuoteLib.encodeV1Quote(
-            quoter,
-            payee,
-            chainId(),
-            dstChain,
-            expiryTime,
-            baseFee,
-            destinationGasPrice,
-            sourcePrice,
-            destinationPrice
-        ),
-        quoterSecret
+            QuoteLib.encodeV1Quote(
+                quoter,
+                payee,
+                chainId(),
+                dstChain,
+                expiryTime,
+                baseFee,
+                destinationGasPrice,
+                sourcePrice,
+                destinationPrice
+            ),
+            quoterSecret
         );
 
         // Calculate total cost: ((destinationGasPrice × gasLimit × destinationPrice) / sourcePrice) + baseFee
@@ -119,8 +117,7 @@ contract WormholeArbiterTest is ExecutorTest {
         totalCost = costInSourceNative + uint256(baseFee);
     }
 
-    function setUp() public override{
-
+    function setUp() public override {
         //set up the forks
         setUpFork(CHAIN_ID_ARBITRUM, vm.envString("ARBITRUM_RPC_URL"));
         setUpFork(CHAIN_ID_BASE, vm.envString("BASE_RPC_URL"));
@@ -160,7 +157,6 @@ contract WormholeArbiterTest is ExecutorTest {
         bytes memory compactCode = address(deployedCompactMock).code;
         vm.etch(THE_COMPACT_ADDRESS, compactCode);
         compactMock = MockTheCompact(THE_COMPACT_ADDRESS);
-
     }
 
     function test_deployments_success() public view {
@@ -177,12 +173,11 @@ contract WormholeArbiterTest is ExecutorTest {
         assertEq(address(compactMock), THE_COMPACT_ADDRESS);
     }
 
-    // test full e2e send and claim flow making sure 
+    // test full e2e send and claim flow making sure
     // TODO: check WormholeExecutor.sol cases too
     // TODO: check for expected calls emits on the lower level contracts
     // TODO: make sure publish and relay sets peer address to the arbiter address
     function test_send_single_send() public {
-
         // set to arbitrum
         selectFork(CHAIN_ID_ARBITRUM);
 
@@ -190,7 +185,8 @@ contract WormholeArbiterTest is ExecutorTest {
         setMessageFee(0 gwei);
 
         //get claim hash
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, createSingleLock());
+        bytes32 claimHash =
+            WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, createSingleLock());
 
         //set claim hash in mock tribunal
         TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
@@ -201,18 +197,20 @@ contract WormholeArbiterTest is ExecutorTest {
         //send claim TODO check for expected emits
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.send{value: quoteCost}(
-            BASE_CHAIN_ID_STANDARD, 
-            SPONSOR, 
-            NONCE, 
-            EXPIRES, 
-            WITNESS, 
-            locks, 
-            bytes(""), 
-            bytes(""),  
-            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}), 
+        WormholeArbiterArbitrum.send{
+            value: quoteCost
+        }(
+            BASE_CHAIN_ID_STANDARD,
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            locks,
+            bytes(""),
+            bytes(""),
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
             quote
-            );
+        );
 
         //check that the filler has quote amount less eth on arbitrum
         assertEq(address(filler).balance, 5 ether - uint256(quoteCost));
@@ -234,7 +232,6 @@ contract WormholeArbiterTest is ExecutorTest {
 
         //check that the claim hash is set as marked in the mock compact
         assertTrue(compactMock.getClaimHash(claimHash));
-
     }
 
     function test_send_single_send_dispatch_callback() public {
@@ -264,26 +261,16 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // encode send context
         bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
-            bytes(""),
-            bytes(""),
-            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
-            quote
+            bytes(""), bytes(""), WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}), quote
         );
 
         // call dispatchCallback on tribunal
         // TODO check for expected emits
         vm.prank(filler);
         vm.recordLogs();
-        TribunalMockArbitrum.dispatchCallback{value: quoteCost}(
-            BASE_CHAIN_ID_STANDARD,
-            compact,
-            WITNESS,
-            claimHash,
-            CLAIMANT,
-            1e18,
-            new uint256[](0),
-            context
-        );
+        TribunalMockArbitrum.dispatchCallback{
+            value: quoteCost
+        }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context);
 
         // check that the filler has quote amount less eth on arbitrum
         assertEq(address(filler).balance, 5 ether - uint256(quoteCost));
@@ -306,7 +293,7 @@ contract WormholeArbiterTest is ExecutorTest {
         // check that the claim hash is set as marked in the mock compact
         assertTrue(compactMock.getClaimHash(claimHash));
     }
-    
+
     function test_send_batch_send() public {
         // set to arbitrum
         selectFork(CHAIN_ID_ARBITRUM);
@@ -527,58 +514,45 @@ contract WormholeArbiterTest is ExecutorTest {
 
     // we want to set message fees setMessageFee(10 gwei); before sending
     // also test eth refunds
-    function test_send_single_send_fees() public {
-    }
+    function test_send_single_send_fees() public {}
 
-    function test_send_batch_send_fees() public {
-    }
+    function test_send_batch_send_fees() public {}
 
-    function test_send_multichain_batch_send_fees() public {
-    }
+    function test_send_multichain_batch_send_fees() public {}
 
     ///// send test edge cases trib side /////
 
     // test for dispatch with invalid arbiter
-    function test_send_dispatch_invalid_arbiter() public {
-    }
+    function test_send_dispatch_invalid_arbiter() public {}
 
     // test for dispatch with invalid context
-    function test_send_dispatch_invalid_context() public {
-    }
+    function test_send_dispatch_invalid_context() public {}
 
     // test for send with invalid claim hash
-    function test_send_invalid_claim_hash() public {
-    }
+    function test_send_invalid_claim_hash() public {}
 
     // test for send with invalid message fee for publishing (WormholeExecutor.sol)
-    function test_send_invalid_message_fee_publishing() public {
-    }
+    function test_send_invalid_message_fee_publishing() public {}
 
     // test for send with invalid fee for execution (WormholeExecutor.sol)
-    function test_send_invalid_fee_execution() public {
-    }
+    function test_send_invalid_fee_execution() public {}
 
     // test for batch send with invalid claim hashes
-    function test_batch_send_invalid_claim_hashes() public {
-    }
+    function test_batch_send_invalid_claim_hashes() public {}
 
     // test for batch send with invalid claimants
-    function test_batch_send_invalid_claimants() public {
-    }
+    function test_batch_send_invalid_claimants() public {}
 
     // test for batch send with invalid size
-    function test_batch_send_invalid_size() public {
-    }
+    function test_batch_send_invalid_size() public {}
 
     // test for multichain batch send with invalid claim hashes (redundant but good to have)
-    function test_multichain_batch_send_invalid_claim_hashes() public {
-    }
+    function test_multichain_batch_send_invalid_claim_hashes() public {}
 
     ///// send test edge cases arbiter side /////
 
     // test for executor send with invalid emitter address
-    function test_executor_send_invalid_emitter_address() public {
-    }
+    function test_executor_send_invalid_emitter_address() public {}
 
     // test for executor send with invalid chain ID (unsupported chain)
     function test_executor_send_invalid_chain_id() public {
@@ -595,11 +569,8 @@ contract WormholeArbiterTest is ExecutorTest {
     }
 
     // test for executor send with value not equal to 0 (WormholeExecutor.sol)
-    function test_executor_send_value_not_zero() public {
-    }
+    function test_executor_send_value_not_zero() public {}
 
     // test for executor send with invalid nonce (WormholeExecutor.sol)
-    function test_executor_send_invalid_nonce() public {
-    }
-
+    function test_executor_send_invalid_nonce() public {}
 }

@@ -17,7 +17,7 @@ import {LOCK_TYPEHASH} from "the-compact/src/types/EIP712Types.sol";
 abstract contract BaseArbiter {
     using FixedPointMathLib for uint256;
 
-    address public constant TRIBUNAL_ADDRESS = 0x000000000000790009689f43bAedb61D67D45bB8; // TODO: Set actual Tribunal address for production    
+    address public constant TRIBUNAL_ADDRESS = 0x000000000000790009689f43bAedb61D67D45bB8; // TODO: Set actual Tribunal address for production
     ITheCompactClaims public immutable THE_COMPACT = ITheCompactClaims(0x00000000000000171ede64904551eeDF3C6C9788);
     ITribunal public immutable TRIBUNAL = ITribunal(TRIBUNAL_ADDRESS);
     uint256 public immutable BASE_SCALING_FACTOR = 1e18;
@@ -80,13 +80,11 @@ abstract contract BaseArbiter {
      * @param locks Array of locks (lockTag, token, amount)
      * @return claimHash The EIP-712 claim hash
      */
-    function deriveClaimHash(
-        address sponsor,
-        uint256 nonce,
-        uint256 expires,
-        bytes32 witness,
-        Lock[] calldata locks
-    ) public view returns (bytes32) {
+    function deriveClaimHash(address sponsor, uint256 nonce, uint256 expires, bytes32 witness, Lock[] calldata locks)
+        public
+        view
+        returns (bytes32)
+    {
         return _deriveClaimHash(sponsor, nonce, expires, witness, locks);
     }
 
@@ -100,13 +98,11 @@ abstract contract BaseArbiter {
      * @param locks Array of locks (lockTag, token, amount)
      * @return claimHash The EIP-712 claim hash
      */
-    function _deriveClaimHash(
-        address sponsor,
-        uint256 nonce,
-        uint256 expires,
-        bytes32 witness,
-        Lock[] calldata locks
-    ) internal view returns (bytes32) {
+    function _deriveClaimHash(address sponsor, uint256 nonce, uint256 expires, bytes32 witness, Lock[] calldata locks)
+        internal
+        view
+        returns (bytes32)
+    {
         bytes32 commitmentsHash = _deriveCommitmentsHash(locks);
 
         // Hash with witness: typehash, arbiter, sponsor, nonce, expires, commitmentsHash, witness
@@ -136,9 +132,7 @@ abstract contract BaseArbiter {
         unchecked {
             for (uint256 i = 0; i < locks.length; ++i) {
                 // Hash each lock directly (no extraction needed)
-                lockHashes[i] = keccak256(
-                    abi.encode(LOCK_TYPEHASH, locks[i].lockTag, locks[i].token, locks[i].amount)
-                );
+                lockHashes[i] = keccak256(abi.encode(LOCK_TYPEHASH, locks[i].lockTag, locks[i].token, locks[i].amount));
             }
         }
 
@@ -182,7 +176,4 @@ abstract contract BaseArbiter {
 
         return (claimHash, claimant, claimReductionScalingFactor);
     }
-
-    
-
 }

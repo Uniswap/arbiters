@@ -28,7 +28,7 @@ contract MessageBatchSendWrapper {
 /// @title MessageBatchSendTest
 /// @notice Test suite for encodeBatchSend and decodeBatchSend functions
 /// @dev Tests batch encoding/decoding with various configurations
-contract MessageBatchSendTest is Test { 
+contract MessageBatchSendTest is Test {
     MessageBatchSendWrapper public wrapper;
 
     // Test constants - Using distinctive non-zero patterns to catch encoding errors
@@ -98,13 +98,8 @@ contract MessageBatchSendTest is Test {
         require(actual.nonce == expected.nonce, "nonce mismatch");
         require(actual.expires == expected.expires, "expires mismatch");
         require(actual.witness == expected.witness, "witness mismatch");
-        require(
-            keccak256(actual.allocatorData) == keccak256(expected.allocatorData), "allocatorData mismatch"
-        );
-        require(
-            keccak256(actual.sponsorSignature) == keccak256(expected.sponsorSignature),
-            "sponsorSignature mismatch"
-        );
+        require(keccak256(actual.allocatorData) == keccak256(expected.allocatorData), "allocatorData mismatch");
+        require(keccak256(actual.sponsorSignature) == keccak256(expected.sponsorSignature), "sponsorSignature mismatch");
         require(
             keccak256(abi.encodePacked(actual.witnessTypestring)) == keccak256(abi.encodePacked(WITNESS_TYPESTRING)),
             "witnessTypestring mismatch"
@@ -120,8 +115,8 @@ contract MessageBatchSendTest is Test {
             require(actual.claims[i].allocatedAmount == expected.commitments[i].amount, "allocatedAmount mismatch");
             require(actual.claims[i].portions.length == 1, "portions length should be 1");
             require(
-                keccak256(abi.encodePacked(actual.claims[i].portions[0].claimant)) ==
-                    keccak256(abi.encodePacked(expectedClaimant)),
+                keccak256(abi.encodePacked(actual.claims[i].portions[0].claimant))
+                    == keccak256(abi.encodePacked(expectedClaimant)),
                 "claimant mismatch"
             );
 

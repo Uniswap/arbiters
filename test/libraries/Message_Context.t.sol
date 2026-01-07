@@ -65,21 +65,13 @@ contract MessageContextTest is Test {
     uint256 constant TOTAL_COST = 1 ether;
 
     // Mock signed quote
-    bytes constant SIGNED_QUOTE =
-        hex"aabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd";
+    bytes constant SIGNED_QUOTE = hex"aabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd";
 
-    function createWormholeParams(uint128 gasLimit, uint256 totalCost)
-        internal
-        pure
-        returns (WormholeParams memory)
-    {
+    function createWormholeParams(uint128 gasLimit, uint256 totalCost) internal pure returns (WormholeParams memory) {
         return WormholeParams({gasLimit: gasLimit, totalCost: totalCost});
     }
 
-    function assertWormholeParamsEqual(WormholeParams memory expected, WormholeParams memory actual)
-        internal
-        pure
-    {
+    function assertWormholeParamsEqual(WormholeParams memory expected, WormholeParams memory actual) internal pure {
         require(expected.gasLimit == actual.gasLimit, "gasLimit mismatch");
         require(expected.totalCost == actual.totalCost, "totalCost mismatch");
     }
@@ -257,7 +249,6 @@ contract MessageContextTest is Test {
         wrapper.decodeSendContext(tooShort);
     }
 
-
     /// @notice Fuzz test: encodeSendContext/decodeSendContext round trip with variable-length signatures
     function testFuzz_sendContext_roundTrip(
         uint16 allocatorSigLength,
@@ -390,11 +381,10 @@ contract MessageContextTest is Test {
     }
 
     /// @notice Fuzz test: encodePostContext/decodePostContext round trip with variable-length signatures
-    function testFuzz_postContext_roundTrip(
-        uint16 allocatorSigLength,
-        uint16 sponsorSigLength,
-        bytes32 randomSeed
-    ) public view {
+    function testFuzz_postContext_roundTrip(uint16 allocatorSigLength, uint16 sponsorSigLength, bytes32 randomSeed)
+        public
+        view
+    {
         // Bound lengths to reasonable sizes for testing (0 to 2048 bytes)
         // Testing up to uint16.max would be too expensive for fuzzing
         allocatorSigLength = uint16(bound(allocatorSigLength, 0, 2048));

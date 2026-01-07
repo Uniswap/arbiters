@@ -10,11 +10,8 @@ interface ImmutableCreate2Factory {
         external
         payable
         returns (address deploymentAddress);
-    
-    function findCreate2Address(bytes32 salt, bytes calldata initCode)
-        external
-        view
-        returns (address deploymentAddress);
+
+    function findCreate2Address(bytes32 salt, bytes calldata initCode) external view returns (address deploymentAddress);
 }
 
 contract WormholeArbiterScript is Script {
@@ -31,11 +28,11 @@ contract WormholeArbiterScript is Script {
         bytes32 salt = bytes32(0x00000000000000000000000000000000000000000000000feeddeadab0debeef);
         address immutableCreate2Factory = address(0x0000000000FFe8B47B3e2130213B802212439497);
         require(immutableCreate2Factory.code.length > 0, "ImmutableCreate2Factory not deployed");
-        
+
         // Get predicted address
         bytes memory initCode = type(WormholeArbiter).creationCode;
         address predictedAddress = ImmutableCreate2Factory(immutableCreate2Factory).findCreate2Address(salt, initCode);
-        
+
         // Check if already deployed
         if (predictedAddress.code.length > 0) {
             console.log("WormholeArbiter already deployed at:", predictedAddress);
@@ -43,22 +40,21 @@ contract WormholeArbiterScript is Script {
             vm.stopBroadcast();
             return;
         }
-        
+
         // deploy the arbiter
         console.log("Deploying WormholeArbiter on chain:", chainId);
         console.log("Using salt:", vm.toString(salt));
         console.log("Predicted address:", predictedAddress);
-    
+
         // deploy the arbiter using create2
-        WormholeArbiter arbiter = WormholeArbiter(
-            ImmutableCreate2Factory(immutableCreate2Factory).safeCreate2(salt, initCode)
-        );
+        WormholeArbiter arbiter =
+            WormholeArbiter(ImmutableCreate2Factory(immutableCreate2Factory).safeCreate2(salt, initCode));
 
         console.log("WormholeArbiter deployed at:", address(arbiter));
-        
+
         // Verify address matches prediction
         require(address(arbiter) == predictedAddress, "Deployment address mismatch");
-        
+
         vm.stopBroadcast();
     }
 }

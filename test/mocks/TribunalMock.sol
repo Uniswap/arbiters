@@ -67,7 +67,10 @@ contract TribunalMock {
         bytes calldata context
     ) external payable returns (bytes4) {
         // Forward the call to the arbiter
-        (bool success, bytes memory returnData) = compact.arbiter.call{value: msg.value}(
+        (bool success, bytes memory returnData) = compact.arbiter
+        .call{
+            value: msg.value
+        }(
             abi.encodeWithSignature(
                 "dispatchCallback(uint256,(address,address,uint256,uint256,(bytes12,address,uint256)[]),bytes32,bytes32,bytes32,uint256,uint256[],bytes)",
                 chainId,
@@ -86,5 +89,4 @@ contract TribunalMock {
         // Return the selector from the arbiter's response
         return abi.decode(returnData, (bytes4));
     }
-
 }

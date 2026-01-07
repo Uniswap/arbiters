@@ -82,9 +82,9 @@ contract WormholeArbiterPostTest is WormholeForkTest {
             amount: 3000e18
         });
         return locks;
-    } 
-    function setUp() public override {
+    }
 
+    function setUp() public override {
         //set up the forks
         setUpFork(CHAIN_ID_ARBITRUM, vm.envString("ARBITRUM_RPC_URL"));
         setUpFork(CHAIN_ID_BASE, vm.envString("BASE_RPC_URL"));
@@ -125,7 +125,6 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         bytes memory compactCode = address(deployedCompactMock).code;
         vm.etch(THE_COMPACT_ADDRESS, compactCode);
         compactMock = MockTheCompact(THE_COMPACT_ADDRESS);
-
     }
 
     function test_deployments_success() public view {
@@ -142,10 +141,9 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         assertEq(address(compactMock), THE_COMPACT_ADDRESS);
     }
 
-    // test full e2e send and claim flow making sure 
+    // test full e2e send and claim flow making sure
     // TODO: check for expected calls emits on the lower level contracts
     function test_send_post() public {
-
         // set to arbitrum
         selectFork(CHAIN_ID_ARBITRUM);
 
@@ -153,7 +151,8 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         setMessageFee(0 gwei);
 
         //get claim hash
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, createSingleLock());
+        bytes32 claimHash =
+            WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, createSingleLock());
 
         //set claim hash in mock tribunal
         TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
@@ -165,14 +164,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         vm.prank(filler);
         vm.recordLogs();
         WormholeArbiterArbitrum.post(
-            BASE_CHAIN_ID_STANDARD,
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            bytes(""),
-            bytes("")
+            BASE_CHAIN_ID_STANDARD, SPONSOR, NONCE, EXPIRES, WITNESS, locks, bytes(""), bytes("")
         );
         bytes memory encodedVaa = fetchEncodedVaa();
 
@@ -221,24 +213,14 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // encode post context (no quotes or gas params needed for post)
-        bytes memory context = WormholeArbiterArbitrum.encodePostContext(
-            bytes(""),
-            bytes("")
-        );
+        bytes memory context = WormholeArbiterArbitrum.encodePostContext(bytes(""), bytes(""));
 
         // call dispatchCallback on tribunal
         // TODO check for expected emits
         vm.prank(filler);
         vm.recordLogs();
         TribunalMockArbitrum.dispatchCallback(
-            BASE_CHAIN_ID_STANDARD,
-            compact,
-            WITNESS,
-            claimHash,
-            CLAIMANT,
-            1e18,
-            new uint256[](0),
-            context
+            BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context
         );
 
         // Fetch the VAA
@@ -324,8 +306,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
 
         // Set expectation for 1 call to arbiter receiveBatchPost
         vm.expectCall(
-            address(WormholeArbiterBase),
-            abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa, claims))
+            address(WormholeArbiterBase), abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa, claims))
         );
 
         // Filler self-relays the batch post
@@ -386,16 +367,10 @@ contract WormholeArbiterPostTest is WormholeForkTest {
 
         // Construct BatchPost array - both targeting BASE chain
         BatchPost[] memory batches = new BatchPost[](2);
-        batches[0] = BatchPost({
-            chainId: BASE_CHAIN_ID_STANDARD,
-            claimHashes: claimHashes1,
-            scalingFactors: new uint256[](0)
-        });
-        batches[1] = BatchPost({
-            chainId: BASE_CHAIN_ID_STANDARD,
-            claimHashes: claimHashes2,
-            scalingFactors: new uint256[](0)
-        });
+        batches[0] =
+            BatchPost({chainId: BASE_CHAIN_ID_STANDARD, claimHashes: claimHashes1, scalingFactors: new uint256[](0)});
+        batches[1] =
+            BatchPost({chainId: BASE_CHAIN_ID_STANDARD, claimHashes: claimHashes2, scalingFactors: new uint256[](0)});
 
         // Send multichain batch post
         vm.prank(filler);
@@ -406,12 +381,8 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         // Fetch both VAAs from the logs (index [0] and [1])
-        bytes memory encodedVaa1 = coreBridge().sign(
-            coreBridge().fetchPublishedMessages(logs)[0]
-        ).encode();
-        bytes memory encodedVaa2 = coreBridge().sign(
-            coreBridge().fetchPublishedMessages(logs)[1]
-        ).encode();
+        bytes memory encodedVaa1 = coreBridge().sign(coreBridge().fetchPublishedMessages(logs)[0]).encode();
+        bytes memory encodedVaa2 = coreBridge().sign(coreBridge().fetchPublishedMessages(logs)[1]).encode();
 
         // Construct BatchClaimWithLocks arrays for relay
         BatchClaimWithLocks[] memory claims1 = new BatchClaimWithLocks[](2);
@@ -463,12 +434,10 @@ contract WormholeArbiterPostTest is WormholeForkTest {
 
         // Set expectation for 2 calls to arbiter receiveBatchPost (one per batch)
         vm.expectCall(
-            address(WormholeArbiterBase),
-            abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa1, claims1))
+            address(WormholeArbiterBase), abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa1, claims1))
         );
         vm.expectCall(
-            address(WormholeArbiterBase),
-            abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa2, claims2))
+            address(WormholeArbiterBase), abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa2, claims2))
         );
 
         // Filler self-relays both batch posts
@@ -491,62 +460,48 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         assertTrue(compactMock.getClaimHash(claimHash4));
     }
 
-    function test_send_single_post_fees() public {
-    }
+    function test_send_single_post_fees() public {}
 
-    function test_send_batch_post_fees() public {
-    }
+    function test_send_batch_post_fees() public {}
 
-    function test_send_multichain_batch_post_fees() public {
-    }
+    function test_send_multichain_batch_post_fees() public {}
 
     ///// post test edge cases trib side /////
 
     // test for dispatch with invalid arbiter
-    function test_post_dispatch_invalid_arbiter() public {
-    }
+    function test_post_dispatch_invalid_arbiter() public {}
 
     // test for dispatch with invalid context
-    function test_post_dispatch_invalid_context() public {
-    }
+    function test_post_dispatch_invalid_context() public {}
 
     // test for post with invalid claim hash
-    function test_post_invalid_claim_hash() public {
-    }
+    function test_post_invalid_claim_hash() public {}
 
     // test for post with invalid claimant
-    function test_post_invalid_claimant() public {
-    }
+    function test_post_invalid_claimant() public {}
 
     // test for post with invalid fee
-    function test_post_invalid_fee() public {
-    }
+    function test_post_invalid_fee() public {}
 
     // test for batch post with no claim filled in tribunal
-    function test_batch_post_no_claim_filled() public {
-    }
+    function test_batch_post_no_claim_filled() public {}
 
     // test for batch post larger than max batch size
-    function test_batch_post_exceeds_max_size() public {
-    }
+    function test_batch_post_exceeds_max_size() public {}
 
     // test for batch post with invalid fee for publishing (WormholeExecutor.sol)
-    function test_batch_post_invalid_fee_publishing() public {
-    }
+    function test_batch_post_invalid_fee_publishing() public {}
 
     // test for multichain batch post with no claim filled in tribunal
-    function test_multichain_batch_post_no_claim_filled() public {
-    }
+    function test_multichain_batch_post_no_claim_filled() public {}
 
     // test for multichain batch post with invalid fee for publishing (WormholeExecutor.sol)
-    function test_multichain_batch_post_invalid_fee_publishing() public {
-    }
+    function test_multichain_batch_post_invalid_fee_publishing() public {}
 
     ///// post test edge cases arbiter side /////
 
     // test for post with invalid emitter address
-    function test_post_invalid_emitter_address() public {
-    }
+    function test_post_invalid_emitter_address() public {}
 
     // test for post with invalid chain ID (unsupported chain)
     function test_post_invalid_chain_id() public {
@@ -563,12 +518,10 @@ contract WormholeArbiterPostTest is WormholeForkTest {
     }
 
     // test for post with invalid nonce
-    function test_post_invalid_nonce() public {
-    }
+    function test_post_invalid_nonce() public {}
 
     // test for batch post with invalid claim hashes that dont match the derived claim hash
-    function test_batch_post_claim_hash_mismatch() public {
-    }
+    function test_batch_post_claim_hash_mismatch() public {}
 
     // test to make sure batch post is correctly applying scaling factors
     function test_batch_post_scaling_factors() public {
@@ -609,7 +562,9 @@ contract WormholeArbiterPostTest is WormholeForkTest {
 
         // Verify scaling factors are set correctly
         assertEq(TribunalMockArbitrum.claimReductionScalingFactor(claimHash1), 1e18, "Claim 1 should have full scaling");
-        assertEq(TribunalMockArbitrum.claimReductionScalingFactor(claimHash2), 0.5e18, "Claim 2 should have 50% scaling");
+        assertEq(
+            TribunalMockArbitrum.claimReductionScalingFactor(claimHash2), 0.5e18, "Claim 2 should have 50% scaling"
+        );
         assertEq(TribunalMockArbitrum.claimReductionScalingFactor(claimHash3), 0, "Claim 3 should have zero scaling");
 
         // Construct claim hash array for batch
@@ -664,8 +619,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
 
         // Set expectation for 1 call to arbiter receiveBatchPost
         vm.expectCall(
-            address(WormholeArbiterBase),
-            abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa, claims))
+            address(WormholeArbiterBase), abi.encodeCall(WormholeArbiterBase.receiveBatchPost, (encodedVaa, claims))
         );
 
         // Construct expected BatchClaim for claim 3 (cancelled claim with zero scaling factor)
@@ -690,10 +644,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         });
 
         // Expect that compactMock.batchClaim is called with the claim that has empty portions
-        vm.expectCall(
-            address(compactMock),
-            abi.encodeCall(compactMock.batchClaim, (expectedClaim3))
-        );
+        vm.expectCall(address(compactMock), abi.encodeCall(compactMock.batchClaim, (expectedClaim3)));
 
         // Filler self-relays the batch post
         // This will internally apply the scaling factors when constructing BatchClaimComponents
@@ -711,7 +662,5 @@ contract WormholeArbiterPostTest is WormholeForkTest {
     }
 
     // test to make sure batch post is correctly applying claimants
-    function test_batch_post_claimants() public {
-    }
-
+    function test_batch_post_claimants() public {}
 }

@@ -51,7 +51,10 @@ contract MessageBatchPostTest is Test {
     }
 
     /// @notice Helper to assert arrays equality
-    function assertArraysEqual(bytes32[] memory expected, bytes32[] memory actual, string memory errorMsg) internal pure {
+    function assertArraysEqual(bytes32[] memory expected, bytes32[] memory actual, string memory errorMsg)
+        internal
+        pure
+    {
         require(expected.length == actual.length, string.concat(errorMsg, ": length mismatch"));
         for (uint256 i = 0; i < expected.length; i++) {
             if (expected[i] != actual[i]) {
@@ -61,7 +64,10 @@ contract MessageBatchPostTest is Test {
         }
     }
 
-    function assertArraysEqual(uint256[] memory expected, uint256[] memory actual, string memory errorMsg) internal pure {
+    function assertArraysEqual(uint256[] memory expected, uint256[] memory actual, string memory errorMsg)
+        internal
+        pure
+    {
         require(expected.length == actual.length, string.concat(errorMsg, ": length mismatch"));
         for (uint256 i = 0; i < expected.length; i++) {
             if (expected[i] != actual[i]) {

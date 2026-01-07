@@ -24,13 +24,12 @@ struct BatchPost {
     uint256[] scalingFactors; // The scaling factors for each claim (1e18 = no reduction)
 }
 
-
 /**
  * @notice Represents a batch send operation for transmitting claims to a destination chain
  * @dev Used for BATCH_SEND message packing type in Wormhole cross-chain messaging
  */
 
-struct BatchSend{
+struct BatchSend {
     uint256 chainId; //chainId where the resource locks live
     BatchClaimWithLocks[] claims; // array of claims to send
     uint128 gasLimit; //gasLimit for message execution and delivery

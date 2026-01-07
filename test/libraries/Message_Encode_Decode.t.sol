@@ -118,17 +118,12 @@ contract MessageTest is Test {
         require(actual.nonce == expectedNonce, "nonce mismatch");
         require(actual.expires == expectedExpires, "expires mismatch");
         require(actual.witness == expectedWitness, "witness mismatch");
-        require(
-            keccak256(actual.allocatorData) == keccak256(expectedAllocatorData), "allocatorData mismatch"
-        );
-        require(
-            keccak256(actual.sponsorSignature) == keccak256(expectedSponsorSig), "sponsorSignature mismatch"
-        );
+        require(keccak256(actual.allocatorData) == keccak256(expectedAllocatorData), "allocatorData mismatch");
+        require(keccak256(actual.sponsorSignature) == keccak256(expectedSponsorSig), "sponsorSignature mismatch");
 
         require(actual.claims.length == expectedLocks.length, "claims length mismatch");
 
         for (uint256 i = 0; i < expectedLocks.length; i++) {
-
             uint256 expectedId = uint256(bytes32(expectedLocks[i].lockTag)) | uint256(uint160(expectedLocks[i].token));
             require(actual.claims[i].id == expectedId, "claim id mismatch - must match lockTag+token");
 
@@ -142,8 +137,8 @@ contract MessageTest is Test {
                 require(actual.claims[i].portions.length == 1, "portions length should be 1");
 
                 require(
-                    keccak256(abi.encodePacked(actual.claims[i].portions[0].claimant)) ==
-                        keccak256(abi.encodePacked(expectedClaimant)),
+                    keccak256(abi.encodePacked(actual.claims[i].portions[0].claimant))
+                        == keccak256(abi.encodePacked(expectedClaimant)),
                     "claimant mismatch"
                 );
 
@@ -178,15 +173,7 @@ contract MessageTest is Test {
         // This will fail in practice due to memory, but the revert check is what matters
         bytes memory tooLong = new bytes(65536);
         wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            tooLong,
-            hex"",
-            CLAIMANT,
-            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, tooLong, hex"", CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
         );
     }
 
@@ -198,15 +185,7 @@ contract MessageTest is Test {
 
         bytes memory tooLong = new bytes(65536);
         wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            hex"",
-            tooLong,
-            CLAIMANT,
-            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", tooLong, CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
         );
     }
 
@@ -479,15 +458,7 @@ contract MessageTest is Test {
         Lock[] memory locks = createMultipleLocks();
 
         bytes memory encoded = wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            hex"",
-            hex"",
-            CLAIMANT,
-            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
         );
 
         BatchClaim memory decoded = wrapper.decode(encoded);
@@ -543,15 +514,7 @@ contract MessageTest is Test {
         Lock[] memory locks = createMultipleLocks();
 
         bytes memory encoded = wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            hex"",
-            hex"",
-            CLAIMANT,
-            CLAIM_REDUCTION_SCALING_FACTOR_REDUCED
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_REDUCED
         );
 
         BatchClaim memory decoded = wrapper.decode(encoded);
@@ -649,23 +612,15 @@ contract MessageTest is Test {
 
         // Encode
         bytes memory encoded;
-        encoded = wrapper.encode(sponsor, nonce, expires, witness, locks, allocatorData, sponsorSig, claimant, scalingFactor);
+        encoded =
+            wrapper.encode(sponsor, nonce, expires, witness, locks, allocatorData, sponsorSig, claimant, scalingFactor);
 
         // Decode
         BatchClaim memory decoded = wrapper.decode(encoded);
 
         // Assert all fields match
         assertBatchClaimEqual(
-            sponsor,
-            nonce,
-            expires,
-            witness,
-            claimant,
-            allocatorData,
-            sponsorSig,
-            locks,
-            scalingFactor,
-            decoded
+            sponsor, nonce, expires, witness, claimant, allocatorData, sponsorSig, locks, scalingFactor, decoded
         );
     }
 
@@ -674,15 +629,7 @@ contract MessageTest is Test {
         Lock[] memory locks = new Lock[](0);
 
         bytes memory encoded = wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            hex"",
-            hex"",
-            CLAIMANT,
-            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
         );
 
         BatchClaim memory decoded = wrapper.decode(encoded);
@@ -710,15 +657,7 @@ contract MessageTest is Test {
         // Create a valid encoded message
         Lock[] memory locks = createSingleLock();
         bytes memory encoded = wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            hex"",
-            hex"",
-            CLAIMANT,
-            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
         );
 
         // Truncate the message by 10 bytes
@@ -786,60 +725,18 @@ contract MessageTest is Test {
         Lock[] memory locks = createSingleLock();
 
         // Test with very low scaling factor (1% = 0.01e18)
-        bytes memory encoded1 = wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            hex"",
-            hex"",
-            CLAIMANT,
-            0.01e18
-        );
+        bytes memory encoded1 = wrapper.encode(SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, 0.01e18);
 
         BatchClaim memory decoded1 = wrapper.decode(encoded1);
 
-        assertBatchClaimEqual(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            CLAIMANT,
-            hex"",
-            hex"",
-            locks,
-            0.01e18,
-            decoded1
-        );
+        assertBatchClaimEqual(SPONSOR, NONCE, EXPIRES, WITNESS, CLAIMANT, hex"", hex"", locks, 0.01e18, decoded1);
 
         // Test with very high scaling factor (1000% = 10e18)
-        bytes memory encoded2 = wrapper.encode(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            hex"",
-            hex"",
-            CLAIMANT,
-            10e18
-        );
+        bytes memory encoded2 = wrapper.encode(SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, 10e18);
 
         BatchClaim memory decoded2 = wrapper.decode(encoded2);
 
-        assertBatchClaimEqual(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            CLAIMANT,
-            hex"",
-            hex"",
-            locks,
-            10e18,
-            decoded2
-        );
+        assertBatchClaimEqual(SPONSOR, NONCE, EXPIRES, WITNESS, CLAIMANT, hex"", hex"", locks, 10e18, decoded2);
     }
 
     /// @notice Test round trip with maximum values

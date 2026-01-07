@@ -133,20 +133,13 @@ contract BaseArbiterTest is Test {
             // Calculate scaled amount based on claim reduction scaling factor
             uint256 scaledAmount = (locks[i].amount * claimReductionScalingFactor) / 1e18;
 
-            portions[0] = Component({
-                claimant: uint256(claimant),
-                amount: scaledAmount
-            });
+            portions[0] = Component({claimant: uint256(claimant), amount: scaledAmount});
 
             // Create claim component
             // id = lockTag (in upper bits) | token address (in lower 160 bits)
             uint256 id = uint256(bytes32(locks[i].lockTag)) | uint256(uint160(locks[i].token));
 
-            claims[i] = BatchClaimComponent({
-                id: id,
-                allocatedAmount: locks[i].amount,
-                portions: portions
-            });
+            claims[i] = BatchClaimComponent({id: id, allocatedAmount: locks[i].amount, portions: portions});
         }
 
         return BatchClaim({
@@ -209,15 +202,8 @@ contract BaseArbiterTest is Test {
     // Test 7: _sendClaim works
     function test_sendClaim() public {
         Lock[] memory locks = createSingleLock();
-        BatchClaim memory claimPayload = createBatchClaimFromLocks(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            CLAIMANT,
-            1e18
-        );
+        BatchClaim memory claimPayload =
+            createBatchClaimFromLocks(SPONSOR, NONCE, EXPIRES, WITNESS, locks, CLAIMANT, 1e18);
 
         // Call _sendClaim
         arbiter.sendClaimPublic(claimPayload);
@@ -239,27 +225,14 @@ contract BaseArbiterTest is Test {
         Lock[] memory locks = createSingleLock();
 
         // Create a BatchClaim using our helper
-        BatchClaim memory batchClaim = createBatchClaimFromLocks(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks,
-            CLAIMANT,
-            1e18
-        );
+        BatchClaim memory batchClaim =
+            createBatchClaimFromLocks(SPONSOR, NONCE, EXPIRES, WITNESS, locks, CLAIMANT, 1e18);
 
         // Get claim hash from MockTheCompact (via arbiter so msg.sender is correct)
         bytes32 compactLibClaimHash = arbiter.sendClaimPublic(batchClaim);
 
         // Get claim hash from BaseArbiter's _deriveClaimHash
-        bytes32 arbiterClaimHash = arbiter.deriveClaimHashPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        bytes32 arbiterClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         // They should match
         assertEq(arbiterClaimHash, compactLibClaimHash, "Claim hashes should match");
@@ -270,26 +243,15 @@ contract BaseArbiterTest is Test {
         Lock[] memory locks = createSingleLock();
 
         // Derive the expected claim hash
-        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         // Set up tribunal mock with filled claim and 1e18 scaling factor
         tribunalMock.setFilled(expectedClaimHash, CLAIMANT);
         tribunalMock.setClaimReductionScalingFactor(expectedClaimHash, 1e18);
 
         // Validate the batch claim
-        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) = arbiter.validateBatchClaimPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) =
+            arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         // Verify results
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
@@ -301,24 +263,13 @@ contract BaseArbiterTest is Test {
     function test_validateBatchClaim_halfScaling() public {
         Lock[] memory locks = createSingleLock();
 
-        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         tribunalMock.setFilled(expectedClaimHash, CLAIMANT);
         tribunalMock.setClaimReductionScalingFactor(expectedClaimHash, 0.5e18);
 
-        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) = arbiter.validateBatchClaimPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) =
+            arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
         assertEq(claimant, CLAIMANT, "Claimant should match");
@@ -329,24 +280,13 @@ contract BaseArbiterTest is Test {
     function test_validateBatchClaim_smallScaling() public {
         Lock[] memory locks = createSingleLock();
 
-        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         tribunalMock.setFilled(expectedClaimHash, CLAIMANT);
         tribunalMock.setClaimReductionScalingFactor(expectedClaimHash, 0xffff);
 
-        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) = arbiter.validateBatchClaimPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) =
+            arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
         assertEq(claimant, CLAIMANT, "Claimant should match");
@@ -360,37 +300,20 @@ contract BaseArbiterTest is Test {
         // Don't set the claim as filled in tribunal mock (defaults to bytes32(0))
 
         vm.expectRevert("Claim not filled in Tribunal");
-        arbiter.validateBatchClaimPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
     }
 
     // Test 14: _validateBatchClaim when claim is filled
     function test_validateBatchClaim_claimFilled() public {
         Lock[] memory locks = createMultipleLocks();
 
-        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         tribunalMock.setFilled(expectedClaimHash, CLAIMANT);
         // Don't explicitly set scaling factor, should default to 1e18
 
-        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) = arbiter.validateBatchClaimPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) =
+            arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
         assertEq(claimant, CLAIMANT, "Claimant should match");
@@ -401,25 +324,14 @@ contract BaseArbiterTest is Test {
     function test_validateBatchClaim_filledWithScaling() public {
         Lock[] memory locks = createMultipleLocks();
 
-        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         uint256 customScaling = 0.75e18;
         tribunalMock.setFilled(expectedClaimHash, CLAIMANT);
         tribunalMock.setClaimReductionScalingFactor(expectedClaimHash, customScaling);
 
-        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) = arbiter.validateBatchClaimPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) =
+            arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
         assertEq(claimant, CLAIMANT, "Claimant should match");
@@ -430,25 +342,14 @@ contract BaseArbiterTest is Test {
     function test_validateBatchClaim_filledWithZeroScaling() public {
         Lock[] memory locks = createSingleLock();
 
-        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         tribunalMock.setFilled(expectedClaimHash, CLAIMANT);
         // Set scaling factor to 0, but mock returns 1e18 by default when 0 is set
         // So we need to explicitly test what the mock returns
 
-        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) = arbiter.validateBatchClaimPublic(
-            SPONSOR,
-            NONCE,
-            EXPIRES,
-            WITNESS,
-            locks
-        );
+        (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) =
+            arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
         assertEq(claimant, CLAIMANT, "Claimant should match");

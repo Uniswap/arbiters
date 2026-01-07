@@ -389,7 +389,6 @@ library Message {
             let commitmentsEnd := add(commitmentsPtr, mul(commitments.length, 96))
 
             for { let cPtr := commitmentsPtr } lt(cPtr, commitmentsEnd) { cPtr := add(cPtr, 96) } {
-
                 let lockTag := calldataload(cPtr)
                 let token := calldataload(add(cPtr, 32))
                 let amount := calldataload(add(cPtr, 64))
