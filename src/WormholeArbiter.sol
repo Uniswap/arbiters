@@ -10,7 +10,13 @@ import {ExecutorSendReceive} from "./wormhole/WormholeExecutor.sol";
 import {CoreBridgeLib} from "wormhole-sdk/libraries/CoreBridge.sol";
 import {WormholeMappings} from "./wormhole/WormholeMappings.sol";
 import {Message} from "./libraries/Message.sol";
-import {MessagePackingType, BatchPost, BatchSend, BatchClaimWithLocks, WormholeParams} from "./wormhole/WormholeTypes.sol";
+import {
+    MessagePackingType,
+    BatchPost,
+    BatchSend,
+    BatchClaimWithLocks,
+    WormholeParams
+} from "./wormhole/WormholeTypes.sol";
 import {BaseArbiter} from "./abstracts/BaseArbiter.sol";
 
 /**
@@ -67,7 +73,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         bytes32 claimHash,
         bytes32 claimant,
         uint256 claimReductionScalingFactor,
-        uint256[] calldata /*claimAmounts*/,
+        uint256[] calldata,
+        /*claimAmounts*/
         bytes calldata context
     ) external payable refundExcessEth returns (bytes4) {
         require(compact.arbiter == address(this), "Invalid arbiter");
@@ -87,16 +94,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
             (allocatorData, sponsorSignature, wormholeParams, signedQuote) = Message.decodeSendContext(context);
 
-            bytes memory message = Message.encode(compact.sponsor, compact.nonce, compact.expires, mandateHash, compact.commitments, allocatorData, sponsorSignature, claimant, claimReductionScalingFactor);
-
-            uint64 sequence = _sendMessage(message, wormholeParams.totalCost, chainId, signedQuote, wormholeParams.gasLimit, uint32(MessagePackingType.SINGLE_SEND));
-
-            emit SingleSendEvent(chainId, claimHash, sequence); // placing here so we don't have to pass claimHash because stack to deep
-
-        } else {
-            (allocatorData, sponsorSignature) = Message.decodePostContext(context);
-            _post(
-                chainId,
+            bytes memory message = Message.encode(
                 compact.sponsor,
                 compact.nonce,
                 compact.expires,
@@ -104,10 +102,37 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
                 compact.commitments,
                 allocatorData,
                 sponsorSignature,
-                claimHash,
                 claimant,
                 claimReductionScalingFactor
             );
+
+            uint64 sequence = _sendMessage(
+                message,
+                wormholeParams.totalCost,
+                chainId,
+                signedQuote,
+                wormholeParams.gasLimit,
+                uint32(MessagePackingType.SINGLE_SEND)
+            );
+
+            emit SingleSendEvent(chainId, claimHash, sequence); // placing here so we don't have to pass claimHash because stack to deep
+        } else {
+            (allocatorData, sponsorSignature) = Message.decodePostContext(context);
+
+            bytes memory message = Message.encode(
+                compact.sponsor,
+                compact.nonce,
+                compact.expires,
+                mandateHash,
+                compact.commitments,
+                allocatorData,
+                sponsorSignature,
+                claimant,
+                claimReductionScalingFactor
+            );
+            uint64 sequence = _postMessage(uint32(MessagePackingType.SINGLE_POST), message);
+
+            emit SinglePostEvent(chainId, claimHash, sequence);
         }
 
         return IDispatchCallback.dispatchCallback.selector;
@@ -210,13 +235,24 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         WormholeParams memory params,
         bytes calldata signedQuote
     ) external payable virtual refundExcessEth returns (uint64 sequence) {
-
         (bytes32 claimHash, bytes32 claimant, uint256 claimReductionScalingFactor) =
             _validateBatchClaim(sponsor, nonce, expires, witness, commitments);
 
-        bytes memory message = Message.encode(sponsor, nonce, expires, witness, commitments, allocatorData, sponsorSignature, claimant, claimReductionScalingFactor);
+        bytes memory message = Message.encode(
+            sponsor,
+            nonce,
+            expires,
+            witness,
+            commitments,
+            allocatorData,
+            sponsorSignature,
+            claimant,
+            claimReductionScalingFactor
+        );
 
-        sequence = _sendMessage(message, params.totalCost, chainId, signedQuote, params.gasLimit, uint32(MessagePackingType.SINGLE_SEND));
+        sequence = _sendMessage(
+            message, params.totalCost, chainId, signedQuote, params.gasLimit, uint32(MessagePackingType.SINGLE_SEND)
+        );
 
         emit SingleSendEvent(chainId, claimHash, sequence);
     }
@@ -228,7 +264,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      * @return sequence The Wormhole sequence number for tracking
      */
     function _batchSend(BatchSend calldata batch) internal virtual returns (uint64 sequence) {
-
         bytes32[] memory claimHash = new bytes32[](batch.claims.length);
         bytes32[] memory claimant = new bytes32[](batch.claims.length);
         uint256[] memory claimReductionScalingFactor = new uint256[](batch.claims.length);
@@ -265,7 +300,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      * @param batch BatchSend struct containing claims, chain info, and delivery parameters
      * @return sequence The Wormhole sequence number for tracking
      */
-    function batchSend(BatchSend calldata batch) public payable virtual refundExcessEth returns (uint64 sequence) {
+    function batchSend(BatchSend calldata batch) external payable virtual refundExcessEth returns (uint64 sequence) {
         return _batchSend(batch);
     }
 
@@ -276,7 +311,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      * @return sequences Array of Wormhole sequence numbers, one per batch
      */
     function multichainBatchSend(BatchSend[] calldata batches)
-        public
+        external
         payable
         virtual
         refundExcessEth
@@ -308,40 +343,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     }
 
     /**
-     * @notice Internal function to publish a single claim via Wormhole core (SINGLE_POST)
-     * @dev Encodes the claim and publishes via _postMessage() for user self-relay
-     * @param chainId The destination chain ID (for event emission)
-     * @param sponsor The address that authorized the original compact
-     * @param nonce The unique nonce for this compact
-     * @param expires The timestamp when this compact expires
-     * @param witness The witness hash (mandate hash) for EIP-712 validation
-     * @param commitments Array of Lock structs (lockTag, token, amount)
-     * @param allocatorData Optional allocator signature data
-     * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @param claimHash The claim hash for event emission
-     * @param claimant The bytes32 claimant identifier from Tribunal
-     * @param claimReductionScalingFactor Scaling factor for claim amounts (1e18 = 100%)
-     * @return sequence The Wormhole sequence number for fetching the VAA
-     */
-    function _post(
-        uint256 chainId,
-        address sponsor,
-        uint256 nonce,
-        uint256 expires,
-        bytes32 witness,
-        Lock[] calldata commitments,
-        bytes calldata allocatorData,
-        bytes calldata sponsorSignature,
-        bytes32 claimHash,
-        bytes32 claimant,
-        uint256 claimReductionScalingFactor
-    ) internal returns (uint64 sequence) {
-        bytes memory message = Message.encode(sponsor, nonce, expires, witness, commitments, allocatorData, sponsorSignature, claimant, claimReductionScalingFactor);
-        sequence = _postMessage(uint32(MessagePackingType.SINGLE_POST), message);
-        emit SinglePostEvent(chainId, claimHash, sequence);
-    }
-
-    /**
      * @notice Publishes a single claim via Wormhole core for user self-relay
      * @dev Validates claim with Tribunal, encodes it, publishes to Wormhole core
      * @param chainId The destination chain ID
@@ -367,8 +368,20 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         (bytes32 claimHash, bytes32 claimant, uint256 claimReductionScalingFactor) =
             _validateBatchClaim(sponsor, nonce, expires, witness, commitments);
 
-        return _post(chainId, sponsor, nonce, expires, witness, commitments, allocatorData, sponsorSignature, claimHash, claimant, claimReductionScalingFactor);
+        bytes memory message = Message.encode(
+            sponsor,
+            nonce,
+            expires,
+            witness,
+            commitments,
+            allocatorData,
+            sponsorSignature,
+            claimant,
+            claimReductionScalingFactor
+        );
+        sequence = _postMessage(uint32(MessagePackingType.SINGLE_POST), message);
 
+        emit SinglePostEvent(chainId, claimHash, sequence);
     }
 
     /**
@@ -456,10 +469,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         bytes32 emitterAddress,
         uint64, // sequence - unused
         uint8 // consistencyLevel - unused
-    )
-        internal
-        override
-    {
+    ) internal override {
         MessagePackingType messageType = MessagePackingType(nonce);
 
         // Validate chain ID to prevent messages from unsupported/compromised chains
@@ -529,15 +539,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             Message.decodeBatchPost(payload);
 
         for (uint256 i = 0; i < claimants.length; i++) {
-
             // Validate that the provided claimHash matches the derived claimHash
             require(
                 _deriveClaimHash(
-                    claims[i].sponsor,
-                    claims[i].nonce,
-                    claims[i].expires,
-                    claims[i].witness,
-                    claims[i].commitments
+                    claims[i].sponsor, claims[i].nonce, claims[i].expires, claims[i].witness, claims[i].commitments
                 ) == claimHashes[i],
                 "Invalid claim hash"
             );
@@ -560,24 +565,17 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
                         portions = new Component[](0);
                     } else {
                         // Calculate scaled amount
-                        uint256 scaledAmount = scalingFactors[i] == 1e18
-                            ? lock.amount
-                            : (lock.amount * scalingFactors[i]) / 1e18;
+                        uint256 scaledAmount =
+                            scalingFactors[i] == 1e18 ? lock.amount : (lock.amount * scalingFactors[i]) / 1e18;
 
                         // Create single Component portion
                         portions = new Component[](1);
-                        portions[0] = Component({
-                            claimant: uint256(claimants[i]),
-                            amount: scaledAmount
-                        });
+                        portions[0] = Component({claimant: uint256(claimants[i]), amount: scaledAmount});
                     }
 
                     // Create BatchClaimComponent
-                    batchClaimComponents[j] = BatchClaimComponent({
-                        id: id,
-                        allocatedAmount: lock.amount,
-                        portions: portions
-                    });
+                    batchClaimComponents[j] =
+                        BatchClaimComponent({id: id, allocatedAmount: lock.amount, portions: portions});
                 }
             }
 
@@ -604,14 +602,14 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      * @return payload The decoded message payload containing claim data
      */
     function _parseAndValidateVaa(bytes calldata encodedVaa, MessagePackingType expectedType)
-        internal view
+        internal
+        view
         returns (bytes calldata)
     {
         (, // timestamp (unused)
             uint32 nonce,
             uint16 emitterChainId,
-            bytes32 emitterAddress,
-            , // sequence (unused)
+            bytes32 emitterAddress,, // sequence (unused)
             , // consistencyLevel (unused)
             bytes calldata payload
         ) = CoreBridgeLib.decodeAndVerifyVaaCd(address(_coreBridge), encodedVaa);
