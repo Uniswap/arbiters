@@ -115,19 +115,12 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Encodes context data for SEND operations (automatic executor delivery)
-     * @dev Creates a packed byte array containing all data needed for automatic Wormhole delivery.
-     *      Sets the FLAG_IS_SEND (0x04) flag to route through _send() in dispatchCallback.
-     *
-     * @param allocatorData Optional allocator signature data for claim validation
+     * @dev Sets FLAG_IS_SEND (0x04) flag to route through send path in dispatchCallback
+     * @param allocatorData Optional allocator signature data
      * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @param params Wormhole delivery parameters (gasLimit for destination execution / total cost for delivery)
+     * @param params Wormhole delivery parameters (gasLimit, totalCost)
      * @param signedQuote Signed executor quote for delivery cost verification
-     *
-     * @return Encoded context bytes for use in dispatchCallback's context parameter
-     *
-     * Context structure:
-     * - Byte 0: Flags (includes 0x04 for SEND, plus optional 0x01/0x02 for signatures)
-     * - Remaining bytes: Variable-length encoded allocatorData, sponsorSignature, params, and signedQuote
+     * @return Encoded context bytes for dispatchCallback
      */
     function encodeSendContext(
         bytes calldata allocatorData,
@@ -140,17 +133,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Encodes context data for POST operations (filler self-relay)
-     * @dev Creates a packed byte array for manual relay operations. Excludes Wormhole-specific
-     *      delivery parameters since the filler will manually relay the VAA.
-     *
-     * @param allocatorData Optional allocator signature data for claim validation
+     * @dev Excludes FLAG_IS_SEND (0x04) to route through post path in dispatchCallback
+     * @param allocatorData Optional allocator signature data
      * @param sponsorSignature Sponsor's signature authorizing the claim
-     *
-     * @return Encoded context bytes for use in dispatchCallback's context parameter
-     *
-     * Context structure:
-     * - Byte 0: Flags (excludes 0x04 for POST, plus optional 0x01/0x02 for signatures)
-     * - Remaining bytes: Variable-length encoded allocatorData and sponsorSignature
+     * @return Encoded context bytes for dispatchCallback
      */
     function encodePostContext(bytes calldata allocatorData, bytes calldata sponsorSignature)
         external
@@ -166,17 +152,14 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Sends a message via Wormhole executor for automatic delivery
-     * @dev Handles fee calculation, balance validation, and executor invocation.
-     *      Used for SEND operations with automatic cross-chain delivery.
-     *
+     * @dev Wraps _publishAndRelay with hardcoded CONSISTENCY_LEVEL and refund address
      * @param payload The encoded message payload to transmit
-     * @param totalCost The total delivery cost (must equal execution cost + Wormhole message fee)
+     * @param totalCost The total delivery cost (execution cost + Wormhole message fee)
      * @param chainId The destination EVM chain ID
      * @param signedQuote Signed executor quote for delivery cost verification
      * @param gasLimit Gas limit for execution on destination chain
-     * @param nonce Message type identifier (MessagePackingType enum value)
-     *
-     * @return sequence The Wormhole sequence number for tracking the message
+     * @param nonce Message type identifier (MessagePackingType enum)
+     * @return sequence The Wormhole sequence number for tracking
      */
     function _sendMessage(
         bytes memory payload,
@@ -191,7 +174,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             CONSISTENCY_LEVEL,
             totalCost,
             WormholeMappings.toWormholeId(chainId),
-            msg.sender, // tribunal refunds excess ETH to msg.sender (will chain refund to msg.sender)
+            msg.sender, // TODO: change send context to include refund address
             signedQuote,
             gasLimit,
             0,
@@ -202,30 +185,18 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Sends a single claim via Wormhole with automatic executor delivery
-     * @dev External entry point for SEND operations outside of Tribunal's dispatchCallback flow.
-     *      Validates the claim with Tribunal, encodes it, and transmits via Wormhole executor.
-     *
-     * @param chainId The destination chain ID where the claim should be submitted
+     * @dev Validates claim with Tribunal, encodes it, and transmits via Wormhole executor
+     * @param chainId The destination chain ID
      * @param sponsor The address that authorized the original compact
-     * @param nonce The unique nonce for this compact to prevent replay attacks
+     * @param nonce The unique nonce for this compact
      * @param expires The timestamp when this compact expires
-     * @param witness The witness hash (mandate hash) used for EIP-712 claim validation
-     * @param commitments Array of Lock structs containing (lockTag, token, amount) for each resource
-     * @param allocatorData Optional allocator signature data for claim validation
+     * @param witness The witness hash (mandate hash) for EIP-712 validation
+     * @param commitments Array of Lock structs (lockTag, token, amount)
+     * @param allocatorData Optional allocator signature data
      * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @param params Wormhole delivery parameters (gasLimit, totalCost for delivery)
+     * @param params Wormhole delivery parameters (gasLimit, totalCost)
      * @param signedQuote Signed executor quote for delivery cost verification
-     *
-     * @return sequence The Wormhole sequence number for tracking the cross-chain message
-     *
-     * Requirements:
-     * - Claim must be marked as filled in Tribunal (validated via _validateBatchClaim)
-     * - msg.value must cover params.totalCost (execution cost + Wormhole message fee)
-     * - chainId must be a supported Wormhole chain
-     * - Excess ETH is automatically refunded via refundExcessEth modifier
-     *
-     * Emits:
-     * - SingleSendEvent(chainId, claimHash, sequence)
+     * @return sequence The Wormhole sequence number for tracking
      */
     function send(
         uint256 chainId,
@@ -252,20 +223,9 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Internal function to send a batch of claims to a single chain via executor (BATCH_SEND)
-     * @dev Validates all claims with Tribunal, encodes batch, and transmits via _sendMessage().
-     *      Used by both batchSend() and multichainBatchSend() to avoid duplicate ETH refunds.
-     *      Enforces MAX_MESSAGE_SIZE limit to prevent oversized messages.
-     *
-     * @param batch BatchSend struct containing chainId, claims, gasLimit, totalCost, and signedQuote
-     *
-     * @return sequence The Wormhole sequence number for tracking the message
-     *
-     * Requirements:
-     * - All claims must be marked as filled in Tribunal
-     * - Encoded batch must not exceed MAX_MESSAGE_SIZE (5KB)
-     *
-     * Emits:
-     * - BatchSendEvent(chainId, claimHashes, sequence)
+     * @dev Validates claims, encodes batch, enforces MAX_MESSAGE_SIZE, transmits via _sendMessage
+     * @param batch BatchSend struct containing chainId, claims, gasLimit, totalCost, signedQuote
+     * @return sequence The Wormhole sequence number for tracking
      */
     function _batchSend(BatchSend calldata batch) internal virtual returns (uint64 sequence) {
 
@@ -300,21 +260,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     }
 
     /**
-     * @notice Sends a batch of claims to a single chain via Wormhole executor with automatic delivery
-     * @dev Public entry point for BATCH_SEND operations. Calls _batchSend() and refunds excess ETH.
-     *
-     * @param batch BatchSend struct containing all claims, chain info, and delivery parameters
-     *
-     * @return sequence The Wormhole sequence number for tracking the message
-     *
-     * Requirements:
-     * - msg.value must cover batch.totalCost
-     * - All claims in batch must be filled in Tribunal
-     * - Batch size must not exceed MAX_MESSAGE_SIZE (5KB)
-     * - Excess ETH is automatically refunded
-     *
-     * Emits:
-     * - BatchSendEvent(chainId, claimHashes, sequence)
+     * @notice Sends a batch of claims to a single chain via Wormhole executor
+     * @dev Public entry point for BATCH_SEND. Calls _batchSend() and refunds excess ETH
+     * @param batch BatchSend struct containing claims, chain info, and delivery parameters
+     * @return sequence The Wormhole sequence number for tracking
      */
     function batchSend(BatchSend calldata batch) public payable virtual refundExcessEth returns (uint64 sequence) {
         return _batchSend(batch);
@@ -322,21 +271,9 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Sends multiple batches of claims to multiple chains via Wormhole executor
-     * @dev Loops through batches calling _batchSend() for each. Refunds excess ETH once at the end.
-     *      Efficient for submitting claims to multiple destination chains in a single transaction.
-     *
+     * @dev Loops through batches calling _batchSend() for each. Refunds excess ETH once at end
      * @param batches Array of BatchSend structs, each targeting a different chain
-     *
      * @return sequences Array of Wormhole sequence numbers, one per batch
-     *
-     * Requirements:
-     * - msg.value must cover sum of all batch.totalCost values
-     * - All claims in all batches must be filled in Tribunal
-     * - Each batch must not exceed MAX_MESSAGE_SIZE (5KB)
-     * - Excess ETH is automatically refunded
-     *
-     * Emits:
-     * - BatchSendEvent(chainId, claimHashes, sequence) for each batch
      */
     function multichainBatchSend(BatchSend[] calldata batches)
         public
@@ -359,17 +296,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Publishes a message via Wormhole core contract for user self-relay
-     * @dev Handles fee calculation, balance validation, and message publishing to Wormhole core.
-     *      Used for POST operations where users relay the VAA themselves (lower cost, manual relay).
-     *      Wraps _coreBridge.publishMessage() to emit a VAA that users can fetch and relay.
-     *
-     * @param nonce Message type identifier (MessagePackingType enum value)
+     * @dev Wraps _coreBridge.publishMessage() to emit a VAA for self relay
+     * @param nonce Message type identifier (MessagePackingType enum)
      * @param payload The encoded message payload to publish
-     *
      * @return sequence The Wormhole sequence number for fetching the VAA
-     *
-     * Requirements:
-     * - Contract must have sufficient balance to cover Wormhole message fee
      */
     function _postMessage(uint32 nonce, bytes memory payload) internal virtual returns (uint64 sequence) {
         uint256 fee = _coreBridge.messageFee();
@@ -379,25 +309,19 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Internal function to publish a single claim via Wormhole core (SINGLE_POST)
-     * @dev Encodes the claim and publishes via _postMessage() for user self-relay.
-     *      Called by both dispatchCallback() and the public post() function.
-     *
-     * @param chainId The destination chain ID (for event emission only, not enforced on-chain)
+     * @dev Encodes the claim and publishes via _postMessage() for user self-relay
+     * @param chainId The destination chain ID (for event emission)
      * @param sponsor The address that authorized the original compact
      * @param nonce The unique nonce for this compact
      * @param expires The timestamp when this compact expires
      * @param witness The witness hash (mandate hash) for EIP-712 validation
-     * @param commitments Array of Lock structs containing (lockTag, token, amount)
+     * @param commitments Array of Lock structs (lockTag, token, amount)
      * @param allocatorData Optional allocator signature data
      * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @param claimHash The claim hash for event emission and tracking
+     * @param claimHash The claim hash for event emission
      * @param claimant The bytes32 claimant identifier from Tribunal
      * @param claimReductionScalingFactor Scaling factor for claim amounts (1e18 = 100%)
-     *
      * @return sequence The Wormhole sequence number for fetching the VAA
-     *
-     * Emits:
-     * - SinglePostEvent(chainId, claimHash, sequence)
      */
     function _post(
         uint256 chainId,
@@ -419,32 +343,16 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Publishes a single claim via Wormhole core for user self-relay
-     * @dev External entry point for POST operations outside of Tribunal's dispatchCallback flow.
-     *      Validates claim with Tribunal, encodes it, and publishes to Wormhole core.
-     *      Users must fetch the VAA using the returned sequence number and relay it themselves.
-     *
-     * @param chainId The destination chain ID where the claim should be submitted
+     * @dev Validates claim with Tribunal, encodes it, publishes to Wormhole core
+     * @param chainId The destination chain ID
      * @param sponsor The address that authorized the original compact
-     * @param nonce The unique nonce for this compact to prevent replay attacks
+     * @param nonce The unique nonce for this compact
      * @param expires The timestamp when this compact expires
-     * @param witness The witness hash (mandate hash) used for EIP-712 claim validation
-     * @param commitments Array of Lock structs containing (lockTag, token, amount) for each resource
-     * @param allocatorData Optional allocator signature data for claim validation
+     * @param witness The witness hash (mandate hash) for EIP-712 validation
+     * @param commitments Array of Lock structs (lockTag, token, amount)
+     * @param allocatorData Optional allocator signature data
      * @param sponsorSignature Sponsor's signature authorizing the claim
-     *
-     * @return sequence The Wormhole sequence number for fetching the VAA from Wormhole
-     *
-     * Requirements:
-     * - Claim must be marked as filled in Tribunal (validated via _validateBatchClaim)
-     * - msg.value must cover Wormhole core message fee
-     * - Excess ETH is automatically refunded
-     *
-     * Emits:
-     * - SinglePostEvent(chainId, claimHash, sequence)
-     *
-     * Notes:
-     * - Users must fetch VAA using: wormhole.getVAA(emitterChain, emitterAddress, sequence)
-     * - Then call receivePost() on destination chain with the VAA
+     * @return sequence The Wormhole sequence number for fetching the VAA
      */
     function post(
         uint256 chainId,
@@ -465,26 +373,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Publishes a batch of claim hashes via Wormhole core for user self-relay
-     * @dev Public entry point for BATCH_POST operations. Validates claims and publishes to Wormhole core.
-     *      More efficient than multiple single posts - uses bitmap compression for up to 120 claims.
-     *
-     * @param chainId The destination chain ID where claims should be submitted
+     * @dev Uses bitmap compression for up to 120 claims. More efficient than multiple single posts
+     * @param chainId The destination chain ID
      * @param claimHashes Array of claim hashes to batch (max 120)
-     *
-     * @return sequence The Wormhole sequence number for fetching the VAA from Wormhole
-     *
-     * Requirements:
-     * - All claims must be marked as filled in Tribunal
-     * - Max 120 claims per batch (bitmap limit)
-     * - msg.value must cover Wormhole core message fee
-     * - Excess ETH is automatically refunded
-     *
-     * Emits:
-     * - BatchPostEvent(chainId, claimHashes, sequence)
-     *
-     * Notes:
-     * - Uses bitmap compression to minimize message size
-     * - Users must fetch VAA and call receiveBatchPost() with claims array
+     * @return sequence The Wormhole sequence number for fetching the VAA
      */
     function batchPost(uint256 chainId, bytes32[] calldata claimHashes)
         public
@@ -498,20 +390,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Internal function to publish a batch of claim hashes without refund logic
-     * @dev Validates all claims with Tribunal, encodes with bitmap compression, and publishes.
-     *      Used by both batchPost() and multichainBatchPost() to avoid duplicate ETH refunds.
-     *
+     * @dev Validates claims, encodes with bitmap compression, publishes to Wormhole core
      * @param chainId The destination chain ID (for event emission)
      * @param claimHashes Array of claim hashes to batch (max 120)
-     *
      * @return sequence The Wormhole sequence number for fetching the VAA
-     *
-     * Requirements:
-     * - All claims must be marked as filled in Tribunal
-     * - claimHashes.length <= 120
-     *
-     * Emits:
-     * - BatchPostEvent(chainId, claimHashes, sequence)
      */
     function _batchPost(uint256 chainId, bytes32[] calldata claimHashes) internal virtual returns (uint64 sequence) {
         require(claimHashes.length <= 120, "Max 120 claims per batch");
@@ -534,21 +416,9 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Publishes multiple batches of claim hashes to multiple chains via Wormhole core
-     * @dev Loops through batches calling _batchPost() for each. Refunds excess ETH once at the end.
-     *      Efficient for submitting claims to multiple destination chains in a single transaction.
-     *
+     * @dev Loops through batches calling _batchPost() for each. Refunds excess ETH once at end
      * @param batches Array of BatchPost structs, each containing chainId and claimHashes
-     *
      * @return sequences Array of Wormhole sequence numbers, one per batch
-     *
-     * Requirements:
-     * - msg.value must cover sum of all Wormhole message fees
-     * - All claims in all batches must be filled in Tribunal
-     * - Each batch max 120 claims
-     * - Excess ETH is automatically refunded
-     *
-     * Emits:
-     * - BatchPostEvent(chainId, claimHashes, sequence) for each batch
      */
     function multichainBatchPost(BatchPost[] calldata batches)
         public
@@ -571,26 +441,12 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     // ============================================================================
 
     /**
-     * @notice Receives and processes SEND messages delivered automatically by Wormhole executor
-     * @dev Handles SINGLE_SEND and BATCH_SEND message types via automatic relay.
-     *      Message authentication is guaranteed by the Wormhole executor before reaching this function.
-     *      Overrides ExecutorReceiveImpl._executeVaa() from Wormhole SDK.
-     *      See "lib/wormhole-solidity-sdk/src/interfaces/IWormholeReceiver.sol" for interface details.
-     *
+     * @notice Receives and processes SEND messages delivered by Wormhole executor
+     * @dev Overrides ExecutorReceiveImpl._executeVaa(). Validates chain ID and emitter address
      * @param payload The encoded claim or batch of claims
-     * @param nonce Message type identifier (MessagePackingType enum: SINGLE_SEND or BATCH_SEND)
+     * @param nonce Message type identifier (SINGLE_SEND or BATCH_SEND)
      * @param peerChain The Wormhole chain ID of the source chain
-     * @param emitterAddress The address that sent the message (must match this contract's address)
-     *
-     * Requirements:
-     * - peerChain must be a supported Wormhole chain ID (validated to prevent compromised chains)
-     * - emitterAddress must equal this contract's address (CREATE2 deterministic validation)
-     * - nonce must be SINGLE_SEND or BATCH_SEND (rejects POST types)
-     *
-     * Security:
-     * - Chain ID validation prevents messages from unsupported/compromised chains
-     * - Even though emitterAddress is validated via CREATE2, a compromised chain
-     *   could arbitrarily set storage slots to bypass immutability rules
+     * @param emitterAddress The address that sent the message (must match this contract)
      */
     function _executeVaa(
         bytes calldata payload,
@@ -643,21 +499,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Receives and processes a single POST message relayed by user via VAA
-     * @dev Handles SINGLE_POST message type via user self-relay with VAA.
-     *      Users fetch the VAA from Wormhole after calling post() and relay it here.
-     *      The payload contains all data needed to process the claim.
-     *
+     * @dev Validates VAA via _parseAndValidateVaa(), then decodes and processes the claim
      * @param encodedVaa The encoded Wormhole VAA fetched by the user
-     *
-     * Requirements:
-     * - VAA must be valid and verified by Wormhole core bridge
-     * - Message type (nonce) must be SINGLE_POST
-     * - Emitter must be this contract's address on the source chain
-     * - Source chain must be a supported Wormhole chain
-     *
-     * Security:
-     * - _parseAndValidateVaa() performs full VAA verification via CoreBridgeLib
-     * - Chain ID and emitter address validation prevent spoofed messages
      */
     function receivePost(bytes calldata encodedVaa) external virtual {
         bytes calldata payload = _parseAndValidateVaa(encodedVaa, MessagePackingType.SINGLE_POST);
@@ -675,24 +518,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Receives and processes a batch POST message relayed by user via VAA
-     * @dev Handles BATCH_POST message type via user self-relay with VAA.
-     *      Uses bitmap-compressed encoding - only claim hashes, claimants, and scaling factors in VAA.
-     *      Caller must provide full claim data (BatchClaimWithLocks) to reconstruct claims.
-     *
+     * @dev VAA contains only claim hashes + claimants + scaling factors (bitmap-compressed).
+     *      Caller provides full claim data which is validated against claim hashes in VAA
      * @param encodedVaa The encoded Wormhole VAA fetched by the user
      * @param claims Array of full claim data (must match claim hashes in VAA payload)
-     *
-     * Requirements:
-     * - VAA must be valid and verified by Wormhole core bridge
-     * - Message type (nonce) must be BATCH_POST
-     * - claims array must match claim hashes in payload (validated via _deriveClaimHash)
-     * - Emitter must be this contract's address on the source chain
-     * - Source chain must be a supported Wormhole chain
-     *
-     * Security:
-     * - Each claim hash is validated against provided claim data
-     * - Scaling factors from VAA are applied to claim amounts
-     * - Zero scaling factor results in empty portions array (cancelled claims)
      */
     function receiveBatchPost(bytes calldata encodedVaa, BatchClaimWithLocks[] calldata claims) external virtual {
         bytes calldata payload = _parseAndValidateVaa(encodedVaa, MessagePackingType.BATCH_POST);
@@ -769,26 +598,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     /**
      * @notice Parses and validates a Wormhole VAA for POST operations
-     * @dev Performs full VAA verification via CoreBridgeLib, then validates chain ID, emitter, and message type.
-     *      Used by receivePost() and receiveBatchPost() to ensure message authenticity.
-     *
+     * @dev Verifies VAA via CoreBridgeLib, validates chain ID, emitter address, and message type
      * @param encodedVaa The encoded Wormhole VAA fetched by the user
      * @param expectedType The expected MessagePackingType (SINGLE_POST or BATCH_POST)
-     *
      * @return payload The decoded message payload containing claim data
-     *
-     * Requirements:
-     * - VAA must pass CoreBridgeLib.decodeAndVerifyVaaCd() verification
-     * - emitterChainId must be a supported Wormhole chain (validated by WormholeMappings)
-     * - emitterAddress must equal this contract's address (CREATE2 deterministic validation)
-     * - Message type (nonce) must match expectedType
-     *
-     * Security:
-     * - Full cryptographic VAA verification via Wormhole core bridge
-     * - Chain ID validation prevents messages from unsupported/compromised chains
-     * - Even though emitterAddress is validated via CREATE2, a compromised chain
-     *   could arbitrarily set storage slots to bypass immutability rules, so we validate chainId
-     * - Message type validation ensures correct decoding logic is used
      */
     function _parseAndValidateVaa(bytes calldata encodedVaa, MessagePackingType expectedType)
         internal view
