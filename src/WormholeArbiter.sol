@@ -52,7 +52,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     /**
      * @notice Callback function invoked by Tribunal after a fill is completed on the fill chain
      * @dev Routes to either SEND (automatic relay) or POST (self-relay) based on context flags.
-     *
      * @param chainId The destination chain ID where the resource lock exists and claim should be submitted
      * @param compact The batch compact data containing sponsor info, nonce, expiry, and commitments (locks)
      * @param mandateHash The witness hash used for EIP-712 claim validation
@@ -63,7 +62,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      *                - First byte: flags (0x04 = SEND operation, 0x00 = POST operation)
      *                - For SEND: allocator data, sponsor signature, Wormhole params, and signed executor quote
      *                - For POST: allocator data and sponsor signature only
-     *
      * @return Function selector to confirm successful execution to Tribunal
      */
     function dispatchCallback(
@@ -92,6 +90,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             WormholeParams memory wormholeParams;
             bytes calldata signedQuote;
 
+            // TODO: try to get rid of wormhole params assignment here. did this for now because of stack too deep error.
             (allocatorData, sponsorSignature, wormholeParams, signedQuote) = Message.decodeSendContext(context);
 
             bytes memory message = Message.encode(
@@ -115,7 +114,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
                 uint32(MessagePackingType.SINGLE_SEND)
             );
 
-            emit SingleSendEvent(chainId, claimHash, sequence); // placing here so we don't have to pass claimHash because stack to deep
+            emit SingleSendEvent(chainId, claimHash, sequence);
         } else {
             (allocatorData, sponsorSignature) = Message.decodePostContext(context);
 
@@ -130,6 +129,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
                 claimant,
                 claimReductionScalingFactor
             );
+
             uint64 sequence = _postMessage(uint32(MessagePackingType.SINGLE_POST), message);
 
             emit SinglePostEvent(chainId, claimHash, sequence);
@@ -264,12 +264,12 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      * @return sequence The Wormhole sequence number for tracking
      */
     function _batchSend(BatchSend calldata batch) internal virtual returns (uint64 sequence) {
-        bytes32[] memory claimHash = new bytes32[](batch.claims.length);
-        bytes32[] memory claimant = new bytes32[](batch.claims.length);
-        uint256[] memory claimReductionScalingFactor = new uint256[](batch.claims.length);
+        bytes32[] memory claimHashes = new bytes32[](batch.claims.length);
+        bytes32[] memory claimants = new bytes32[](batch.claims.length);
+        uint256[] memory scalingFactors = new uint256[](batch.claims.length);
 
         for (uint256 i = 0; i < batch.claims.length; ++i) {
-            (claimHash[i], claimant[i], claimReductionScalingFactor[i]) = _validateBatchClaim(
+            (claimHashes[i], claimants[i], scalingFactors[i]) = _validateBatchClaim(
                 batch.claims[i].sponsor,
                 batch.claims[i].nonce,
                 batch.claims[i].expires,
@@ -278,7 +278,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             );
         }
 
-        bytes memory encodedBatch = Message.encodeBatchSend(claimant, claimReductionScalingFactor, batch.claims);
+        bytes memory encodedBatch = Message.encodeBatchSend(claimants, scalingFactors, batch.claims);
 
         require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
 
@@ -291,7 +291,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
             uint32(MessagePackingType.BATCH_SEND)
         );
 
-        emit BatchSendEvent(batch.chainId, claimHash, sequence);
+        emit BatchSendEvent(batch.chainId, claimHashes, sequence);
     }
 
     /**
@@ -385,23 +385,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     }
 
     /**
-     * @notice Publishes a batch of claim hashes via Wormhole core for user self-relay
-     * @dev Uses bitmap compression for up to 120 claims. More efficient than multiple single posts
-     * @param chainId The destination chain ID
-     * @param claimHashes Array of claim hashes to batch (max 120)
-     * @return sequence The Wormhole sequence number for fetching the VAA
-     */
-    function batchPost(uint256 chainId, bytes32[] calldata claimHashes)
-        public
-        payable
-        virtual
-        refundExcessEth
-        returns (uint64 sequence)
-    {
-        sequence = _batchPost(chainId, claimHashes);
-    }
-
-    /**
      * @notice Internal function to publish a batch of claim hashes without refund logic
      * @dev Validates claims, encodes with bitmap compression, publishes to Wormhole core
      * @param chainId The destination chain ID (for event emission)
@@ -425,6 +408,23 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         sequence = _postMessage(uint32(MessagePackingType.BATCH_POST), encodedBatch);
 
         emit BatchPostEvent(chainId, claimHashes, sequence);
+    }
+
+    /**
+     * @notice Publishes a batch of claim hashes via Wormhole core for user self-relay
+     * @dev Uses bitmap compression for up to 120 claims. More efficient than multiple single posts
+     * @param chainId The destination chain ID
+     * @param claimHashes Array of claim hashes to batch (max 120)
+     * @return sequence The Wormhole sequence number for fetching the VAA
+     */
+    function batchPost(uint256 chainId, bytes32[] calldata claimHashes)
+        public
+        payable
+        virtual
+        refundExcessEth
+        returns (uint64 sequence)
+    {
+        sequence = _batchPost(chainId, claimHashes);
     }
 
     /**
