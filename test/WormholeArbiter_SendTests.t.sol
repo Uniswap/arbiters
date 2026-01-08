@@ -12,7 +12,11 @@ import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
 import {ExecutorTest} from "wormhole-solidity-sdk/testing/ExecutorTest.sol";
 import {CHAIN_ID_ARBITRUM, CHAIN_ID_BASE} from "wormhole-solidity-sdk/constants/Chains.sol";
 
-// for send tests, using this as an example: https://github.com/wormhole-foundation/wormhole-solidity-sdk/blob/main/test/Executor.t.sol
+// to understand how these tests work, see the example at: https://github.com/wormhole-foundation/wormhole-solidity-sdk/blob/main/test/Executor.t.sol
+// Similar to the example, this test uses the executor test harness from the wormhole-solidity-sdk at lib/wormhole-solidity-sdk/src/testing/ExecutorTest.sol
+// it forks arbitrum and base, deploys the arbiters and tribunals, and then tests the send flow on both forks.
+// the ExecutorTest harness deals with the execution of the relay and the verification of the VAA and overwrites
+// the coreBridge to a new set of Guardian keys to allow signing the VAA with the new guardian keys.
 
 contract WormholeArbiterTest is ExecutorTest {
     //wormhole arbiters for arbitrum and base
@@ -82,6 +86,8 @@ contract WormholeArbiterTest is ExecutorTest {
         return locks;
     }
 
+    // helper function to craft a signed quote for the send test
+    // and return the total cost of the quote
     function craftSignedQuote(uint16 dstChain, uint128 gasLimit)
         internal
         view
@@ -160,16 +166,15 @@ contract WormholeArbiterTest is ExecutorTest {
     }
 
     function test_deployments_success() public view {
-        //assert that the tribunals are deployed to the same address on both forks
-        address TRIBUNAL_ADDRESS = WormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
-        assertEq(address(TribunalMockArbitrum), TRIBUNAL_ADDRESS);
-        assertEq(address(TribunalMockBase), TRIBUNAL_ADDRESS);
+        // Tribunals deployed to same address on both forks
+        assertEq(address(TribunalMockArbitrum), address(TribunalMockBase));
+        assertTrue(address(TribunalMockArbitrum) != address(0));
 
-        //assert that the arbiters are deployed to the same address on both forks
+        // Arbiters deployed to same address on both forks
         assertEq(address(WormholeArbiterArbitrum), address(WormholeArbiterBase));
         assertTrue(address(WormholeArbiterArbitrum) != address(0));
 
-        //assert that the compact mock is etched to the Compact address
+        // Compact mock etched to correct address
         assertEq(address(compactMock), THE_COMPACT_ADDRESS);
     }
 
@@ -194,7 +199,8 @@ contract WormholeArbiterTest is ExecutorTest {
         //create single lock
         Lock[] memory locks = createSingleLock();
 
-        //send claim TODO check for expected emits
+        //send claim
+        // TODO: check for expected emits
         vm.prank(filler);
         vm.recordLogs();
         WormholeArbiterArbitrum.send{
@@ -573,4 +579,10 @@ contract WormholeArbiterTest is ExecutorTest {
 
     // test for executor send with invalid nonce (WormholeExecutor.sol)
     function test_executor_send_invalid_nonce() public {}
+
+    // test for executor with invalid vaa signature (WormholeExecutor.sol)
+    function test_executor_send_invalid_vaa_signature() public {}
+
+    // test for executor batch send with invalid vaa signature (WormholeExecutor.sol)
+    function test_executor_batch_send_invalid_vaa_signature() public {}
 }
