@@ -25,8 +25,6 @@ import {BaseArbiter} from "./abstracts/BaseArbiter.sol";
  */
 
 contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter {
-    using Message for bytes;
-
     uint8 constant CONSISTENCY_LEVEL = 201; // safe for now. maybe custom in the future
     uint16 constant MAX_MESSAGE_SIZE = 5_000; // 5KB -- solana can only do 1232 bytes so maybe need to reduce
 
@@ -86,7 +84,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         bytes calldata allocatorData;
         bytes calldata sponsorSignature;
 
-        if ((flags & 0x04) != 0) {
+        if ((flags & Message.IS_SEND) != 0) {
             WormholeParams memory wormholeParams;
             bytes calldata signedQuote;
 
@@ -268,14 +266,16 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         bytes32[] memory claimants = new bytes32[](batch.claims.length);
         uint256[] memory scalingFactors = new uint256[](batch.claims.length);
 
-        for (uint256 i = 0; i < batch.claims.length; ++i) {
-            (claimHashes[i], claimants[i], scalingFactors[i]) = _validateBatchClaim(
-                batch.claims[i].sponsor,
-                batch.claims[i].nonce,
-                batch.claims[i].expires,
-                batch.claims[i].witness,
-                batch.claims[i].commitments
-            );
+        unchecked {
+            for (uint256 i = 0; i < batch.claims.length; ++i) {
+                (claimHashes[i], claimants[i], scalingFactors[i]) = _validateBatchClaim(
+                    batch.claims[i].sponsor,
+                    batch.claims[i].nonce,
+                    batch.claims[i].expires,
+                    batch.claims[i].witness,
+                    batch.claims[i].commitments
+                );
+            }
         }
 
         bytes memory encodedBatch = Message.encodeBatchSend(claimants, scalingFactors, batch.claims);
@@ -418,7 +418,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      * @return sequence The Wormhole sequence number for fetching the VAA
      */
     function batchPost(uint256 chainId, bytes32[] calldata claimHashes)
-        public
+        external
         payable
         virtual
         refundExcessEth
