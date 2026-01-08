@@ -21,7 +21,33 @@ import {BaseArbiter} from "./abstracts/BaseArbiter.sol";
 
 /**
  * @notice Cross-chain arbiter for The Compact using Wormhole infrastructure
- * @dev Implements bidirectional message flow between fill chains and claim chains
+ * @dev Relays fills from the Tribunal on the target chain to the origin chain via
+ * Wormhole, then submits claim data to The Compact for settlement.
+ *
+ * TWO OPERATIONAL MODES:
+ * ┌─────────────────────────────────────────────────────────────┐
+ * │ SEND (automatic relay)     │ POST (self-relay)              │
+ * ├────────────────────────────┼────────────────────────────────┤
+ * │ Uses Wormhole Executor     │ Uses Wormhole Core only        │
+ * │ Relayer delivers message   │ User fetches VAA & submits     │
+ * │ Higher cost (relay fees)   │ Lower cost (just message fee)  │
+ * │ Automatic delivery         │ Manual delivery required       │
+ * └─────────────────────────────────────────────────────────────┘
+ *
+ * ENTRY POINTS (Source Chain - sending claims):
+ * - dispatchCallback()           Tribunal calls after fill validation
+ * - send() / batchSend()         Direct SEND (bypasses Tribunal)
+ * - post() / batchPost()         Direct POST (bypasses Tribunal)
+ * - multichainBatch{Send,Post}() Multiple chains in one tx
+ *
+ * ENTRY POINTS (Destination Chain - receiving claims):
+ * - executeVAAv1                 Wormhole Executor calls (SEND mode) [in WormholeExecutor.sol]
+ * - receivePost()                User calls with VAA (POST mode)
+ * - receiveBatchPost()           User calls with VAA + claim data
+ *
+ * HELPERS (for off-chain context construction):
+ * - encodeSendContext()          Build context for SEND via Tribunal
+ * - encodePostContext()          Build context for POST via Tribunal
  */
 
 contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter {
@@ -44,7 +70,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     }
 
     // ============================================================================
-    // DISPATCH CALLBACK: Tribunal entrypoint and context encoding / decoding
+    // DISPATCH CALLBACK: Tribunal entrypoint
     // ============================================================================
 
     /**
@@ -134,39 +160,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         }
 
         return IDispatchCallback.dispatchCallback.selector;
-    }
-
-    /**
-     * @notice Encodes context data for SEND operations (automatic executor delivery)
-     * @dev Sets FLAG_IS_SEND (0x04) flag to route through send path in dispatchCallback
-     * @param allocatorData Optional allocator signature data
-     * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @param params Wormhole delivery parameters (gasLimit, totalCost)
-     * @param signedQuote Signed executor quote for delivery cost verification
-     * @return Encoded context bytes for dispatchCallback
-     */
-    function encodeSendContext(
-        bytes calldata allocatorData,
-        bytes calldata sponsorSignature,
-        WormholeParams memory params,
-        bytes calldata signedQuote
-    ) external pure returns (bytes memory) {
-        return Message.encodeSendContext(allocatorData, sponsorSignature, params, signedQuote);
-    }
-
-    /**
-     * @notice Encodes context data for POST operations (filler self-relay)
-     * @dev Excludes FLAG_IS_SEND (0x04) to route through post path in dispatchCallback
-     * @param allocatorData Optional allocator signature data
-     * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @return Encoded context bytes for dispatchCallback
-     */
-    function encodePostContext(bytes calldata allocatorData, bytes calldata sponsorSignature)
-        external
-        pure
-        returns (bytes memory)
-    {
-        return Message.encodePostContext(allocatorData, sponsorSignature);
     }
 
     // ============================================================================
@@ -397,10 +390,12 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         bytes32[] memory claimants = new bytes32[](claimHashes.length);
         uint256[] memory scalingFactors = new uint256[](claimHashes.length);
 
-        for (uint256 i = 0; i < claimHashes.length; i++) {
-            claimants[i] = TRIBUNAL.filled(claimHashes[i]);
-            require(claimants[i] != bytes32(0), "Claim not filled in Tribunal");
-            scalingFactors[i] = TRIBUNAL.claimReductionScalingFactor(claimHashes[i]);
+        unchecked {
+            for (uint256 i = 0; i < claimHashes.length; ++i) {
+                claimants[i] = TRIBUNAL.filled(claimHashes[i]);
+                require(claimants[i] != bytes32(0), "Claim not filled in Tribunal");
+                scalingFactors[i] = TRIBUNAL.claimReductionScalingFactor(claimHashes[i]);
+            }
         }
 
         bytes memory encodedBatch = Message.encodeBatchPost(claimants, claimHashes, scalingFactors);
@@ -434,7 +429,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      * @return sequences Array of Wormhole sequence numbers, one per batch
      */
     function multichainBatchPost(BatchPost[] calldata batches)
-        public
+        external
         payable
         virtual
         refundExcessEth
@@ -450,7 +445,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     }
 
     // ============================================================================
-    // RECEIVE OPERATIONS: Relayer Delivery
+    // RECEIVE OPERATIONS: Processing incoming messages on destination chain
     // ============================================================================
 
     /**
@@ -503,9 +498,37 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         }
     }
 
-    // ============================================================================
-    // RECEIVE OPERATIONS: User Self-Relayed Delivery (via Wormhole Core)
-    // ============================================================================
+    /**
+     * @notice Parses and validates a Wormhole VAA for POST operations
+     * @dev Verifies VAA via CoreBridgeLib, validates chain ID, emitter address, and message type
+     * @param encodedVaa The encoded Wormhole VAA fetched by the user
+     * @param expectedType The expected MessagePackingType (SINGLE_POST or BATCH_POST)
+     * @return payload The decoded message payload containing claim data
+     */
+    function _parseAndValidateVaa(bytes calldata encodedVaa, MessagePackingType expectedType)
+        internal
+        view
+        returns (bytes calldata)
+    {
+        (, // timestamp (unused)
+            uint32 nonce,
+            uint16 emitterChainId,
+            bytes32 emitterAddress,, // sequence (unused)
+            , // consistencyLevel (unused)
+            bytes calldata payload
+        ) = CoreBridgeLib.decodeAndVerifyVaaCd(address(_coreBridge), encodedVaa);
+
+        // Validate chain ID to prevent messages from unsupported/compromised chains
+        // Even though emitterAddress is validated via CREATE2, a compromised chain
+        // could arbitrarily set storage slots to bypass immutability rules
+        WormholeMappings.validateChainId(emitterChainId);
+
+        _validateMessageSender(address(uint160(uint256(emitterAddress))));
+
+        require(MessagePackingType(nonce) == expectedType, "Invalid message type");
+
+        return payload;
+    }
 
     /**
      * @notice Receives and processes a single POST message relayed by user via VAA
@@ -547,38 +570,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
                 "Invalid claim hash"
             );
 
-            // Transform commitments into BatchClaimComponents using scalingFactors and claimants
-            Lock[] calldata commitments = claims[i].commitments;
-            BatchClaimComponent[] memory batchClaimComponents = new BatchClaimComponent[](commitments.length);
-
-            unchecked {
-                for (uint256 j = 0; j < commitments.length; ++j) {
-                    Lock calldata lock = commitments[j];
-
-                    // Pack lockTag + token into id
-                    uint256 id = uint256(bytes32(lock.lockTag)) | uint256(uint160(lock.token));
-
-                    // Create Component portions based on scaling factor
-                    Component[] memory portions;
-                    if (scalingFactors[i] == 0) {
-                        // Empty portions array for cancelled claims (zero scaling factor)
-                        portions = new Component[](0);
-                    } else {
-                        // Calculate scaled amount
-                        uint256 scaledAmount =
-                            scalingFactors[i] == 1e18 ? lock.amount : (lock.amount * scalingFactors[i]) / 1e18;
-
-                        // Create single Component portion
-                        portions = new Component[](1);
-                        portions[0] = Component({claimant: uint256(claimants[i]), amount: scaledAmount});
-                    }
-
-                    // Create BatchClaimComponent
-                    batchClaimComponents[j] =
-                        BatchClaimComponent({id: id, allocatedAmount: lock.amount, portions: portions});
-                }
-            }
-
             BatchClaim memory claim = BatchClaim({
                 allocatorData: claims[i].allocatorData,
                 sponsorSignature: claims[i].sponsorSignature,
@@ -587,42 +578,90 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
                 expires: claims[i].expires,
                 witness: claims[i].witness,
                 witnessTypestring: WITNESS_TYPESTRING,
-                claims: batchClaimComponents
+                claims: _buildBatchClaimComponents(claims[i].commitments, claimants[i], scalingFactors[i])
             });
 
             _sendClaim(claim);
         }
     }
 
+    // ============================================================================
+    // HELPERS: Context encoding for off-chain use + batch claims
+    // ============================================================================
+
     /**
-     * @notice Parses and validates a Wormhole VAA for POST operations
-     * @dev Verifies VAA via CoreBridgeLib, validates chain ID, emitter address, and message type
-     * @param encodedVaa The encoded Wormhole VAA fetched by the user
-     * @param expectedType The expected MessagePackingType (SINGLE_POST or BATCH_POST)
-     * @return payload The decoded message payload containing claim data
+     * @notice Encodes context data for SEND operations (automatic executor delivery)
+     * @dev Sets FLAG_IS_SEND (0x04) flag to route through send path in dispatchCallback
+     * @param allocatorData Optional allocator signature data
+     * @param sponsorSignature Sponsor's signature authorizing the claim
+     * @param params Wormhole delivery parameters (gasLimit, totalCost)
+     * @param signedQuote Signed executor quote for delivery cost verification
+     * @return Encoded context bytes for dispatchCallback
      */
-    function _parseAndValidateVaa(bytes calldata encodedVaa, MessagePackingType expectedType)
-        internal
-        view
-        returns (bytes calldata)
+    function encodeSendContext(
+        bytes calldata allocatorData,
+        bytes calldata sponsorSignature,
+        WormholeParams memory params,
+        bytes calldata signedQuote
+    ) external pure returns (bytes memory) {
+        return Message.encodeSendContext(allocatorData, sponsorSignature, params, signedQuote);
+    }
+
+    /**
+     * @notice Encodes context data for POST operations (filler self-relay)
+     * @dev Excludes FLAG_IS_SEND (0x04) to route through post path in dispatchCallback
+     * @param allocatorData Optional allocator signature data
+     * @param sponsorSignature Sponsor's signature authorizing the claim
+     * @return Encoded context bytes for dispatchCallback
+     */
+    function encodePostContext(bytes calldata allocatorData, bytes calldata sponsorSignature)
+        external
+        pure
+        returns (bytes memory)
     {
-        (, // timestamp (unused)
-            uint32 nonce,
-            uint16 emitterChainId,
-            bytes32 emitterAddress,, // sequence (unused)
-            , // consistencyLevel (unused)
-            bytes calldata payload
-        ) = CoreBridgeLib.decodeAndVerifyVaaCd(address(_coreBridge), encodedVaa);
+        return Message.encodePostContext(allocatorData, sponsorSignature);
+    }
 
-        // Validate chain ID to prevent messages from unsupported/compromised chains
-        // Even though emitterAddress is validated via CREATE2, a compromised chain
-        // could arbitrarily set storage slots to bypass immutability rules
-        WormholeMappings.validateChainId(emitterChainId);
+    /**
+     * @notice Transforms Lock commitments into BatchClaimComponents for The Compact
+     * @dev Applies scaling factor to amounts and packs lockTag + token into id
+     * @param commitments Array of Lock structs (lockTag, token, amount)
+     * @param claimant The bytes32 claimant identifier
+     * @param scalingFactor Scaling factor for amounts (1e18 = 100%, 0 = cancelled)
+     * @return batchClaimComponents Array of BatchClaimComponent for BatchClaim
+     */
+    function _buildBatchClaimComponents(Lock[] calldata commitments, bytes32 claimant, uint256 scalingFactor)
+        internal
+        pure
+        returns (BatchClaimComponent[] memory batchClaimComponents)
+    {
+        batchClaimComponents = new BatchClaimComponent[](commitments.length);
 
-        _validateMessageSender(address(uint160(uint256(emitterAddress))));
+        unchecked {
+            for (uint256 j = 0; j < commitments.length; ++j) {
+                Lock calldata lock = commitments[j];
 
-        require(MessagePackingType(nonce) == expectedType, "Invalid message type");
+                // Pack lockTag + token into id
+                uint256 id = uint256(bytes32(lock.lockTag)) | uint256(uint160(lock.token));
 
-        return payload;
+                // Create Component portions based on scaling factor
+                Component[] memory portions;
+                if (scalingFactor == 0) {
+                    // Empty portions array for cancelled claims (zero scaling factor)
+                    portions = new Component[](0);
+                } else {
+                    // Calculate scaled amount
+                    uint256 scaledAmount = scalingFactor == 1e18 ? lock.amount : (lock.amount * scalingFactor) / 1e18;
+
+                    // Create single Component portion
+                    portions = new Component[](1);
+                    portions[0] = Component({claimant: uint256(claimant), amount: scaledAmount});
+                }
+
+                // Create BatchClaimComponent
+                batchClaimComponents[j] =
+                    BatchClaimComponent({id: id, allocatedAmount: lock.amount, portions: portions});
+            }
+        }
     }
 }
