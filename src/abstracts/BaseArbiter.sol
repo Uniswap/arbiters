@@ -12,37 +12,28 @@ import {LOCK_TYPEHASH} from "the-compact/src/types/EIP712Types.sol";
 /**
  * @title BaseArbiter
  * @notice Abstract base contract providing common arbiter functionality
- * @dev Provides ETH refund mechanisms and claim submission logic for arbiter implementations
+ * @dev Provides ETH refund mechanisms, claim submission, and EIP-712 hash derivation
  */
 abstract contract BaseArbiter {
     using FixedPointMathLib for uint256;
 
-    address public constant TRIBUNAL_ADDRESS = 0x000000000000790009689f43bAedb61D67D45bB8; // TODO: Set actual Tribunal address for production
+    address public constant TRIBUNAL_ADDRESS = 0x000000000000790009689f43bAedb61D67D45bB8;
     ITheCompactClaims public immutable THE_COMPACT = ITheCompactClaims(0x00000000000000171ede64904551eeDF3C6C9788);
     ITribunal public immutable TRIBUNAL = ITribunal(TRIBUNAL_ADDRESS);
     uint256 public immutable BASE_SCALING_FACTOR = 1e18;
 
-    /**
-     * @notice Validates that a message came from the corresponding arbiter on another chain
-     * @dev Checks that the emitter address matches this contract's address (deterministic across chains)
-     */
+    /// @dev Validates emitter matches this contract (deterministic deployment)
     function _validateMessageSender(address emitter) internal view {
         require(emitter == address(this), "Message not from corresponding arbiter");
     }
 
-    /**
-     * @notice Modifier to automatically refund excess ETH after function execution
-     * @dev Follows the router pattern - refunds entire contract balance to msg.sender
-     */
+    /// @dev Refunds entire contract balance to msg.sender after function execution
     modifier refundExcessEth() {
         _;
         _refundExcessEth();
     }
 
-    /**
-     * @notice Internal function to refund excess ETH to msg.sender
-     * @dev Refunds entire contract balance to msg.sender after function execution.
-     */
+    /// @dev Refunds entire contract balance to msg.sender
     function _refundExcessEth() internal {
         uint256 toRefund = address(this).balance;
         if (toRefund > 0) {
@@ -51,35 +42,15 @@ abstract contract BaseArbiter {
         }
     }
 
-    /**
-     * @notice Internal function to submit a batch claim to The Compact
-     * @dev Accepts a fully constructed BatchClaim and submits it to THE_COMPACT.batchClaim().
-     *      Can be overridden by inheriting contracts if custom claim submission logic is needed.
-     *
-     * @param claimPayload The fully constructed BatchClaim to submit
-     *
-     * @return claimHash The hash of the submitted claim returned by The Compact
-     */
+    /// @dev Submits BatchClaim to THE_COMPACT.batchClaim()
     function _sendClaim(BatchClaim memory claimPayload) internal virtual returns (bytes32 claimHash) {
         claimHash = THE_COMPACT.batchClaim(claimPayload);
         return claimHash;
     }
 
-    // ============================================================================
-    // CLAIM HASH HELPERS (memory-compatible alternative to ClaimHashLib)
-    // ============================================================================
+    // ======== Claim Hash Helpers ========
 
-    /**
-     * @notice Derives the EIP-712 claim hash from Lock array
-     * @dev Uses COMPACT_TYPEHASH_WITH_MANDATE which includes the Mandate witness type
-     * @dev Public view function for external access to claim hash derivation
-     * @param sponsor The account to source tokens from
-     * @param nonce Replay protection nonce
-     * @param expires Expiration timestamp
-     * @param witness Hash of the witness (mandate) data
-     * @param locks Array of locks (lockTag, token, amount)
-     * @return claimHash The EIP-712 claim hash
-     */
+    /// @dev Public wrapper for _deriveClaimHash (for off-chain use)
     function deriveClaimHash(address sponsor, uint256 nonce, uint256 expires, bytes32 witness, Lock[] calldata locks)
         public
         view
@@ -88,16 +59,7 @@ abstract contract BaseArbiter {
         return _deriveClaimHash(sponsor, nonce, expires, witness, locks);
     }
 
-    /**
-     * @notice Internal function to derive the EIP-712 claim hash from Lock array
-     * @dev Uses COMPACT_TYPEHASH_WITH_MANDATE which includes the Mandate witness type
-     * @param sponsor The account to source tokens from
-     * @param nonce Replay protection nonce
-     * @param expires Expiration timestamp
-     * @param witness Hash of the witness (mandate) data
-     * @param locks Array of locks (lockTag, token, amount)
-     * @return claimHash The EIP-712 claim hash
-     */
+    /// @dev Derives EIP-712 claim hash using COMPACT_TYPEHASH_WITH_MANDATE
     function _deriveClaimHash(address sponsor, uint256 nonce, uint256 expires, bytes32 witness, Lock[] calldata locks)
         internal
         view
@@ -108,27 +70,13 @@ abstract contract BaseArbiter {
         // Hash with witness: typehash, arbiter, sponsor, nonce, expires, commitmentsHash, witness
         // Matches Tribunal's _deriveClaimHash using COMPACT_TYPEHASH_WITH_MANDATE
         return keccak256(
-            abi.encode(
-                COMPACT_TYPEHASH_WITH_MANDATE,
-                address(this), // arbiter
-                sponsor,
-                nonce,
-                expires,
-                commitmentsHash,
-                witness
-            )
+            abi.encode(COMPACT_TYPEHASH_WITH_MANDATE, address(this), sponsor, nonce, expires, commitmentsHash, witness)
         );
     }
 
-    /**
-     * @notice Derives the commitments hash from Lock array
-     * @dev Each lock is directly hashed without transformation (lockTag, token, amount)
-     * @param locks Array of locks
-     * @return The EIP-712 commitments hash
-     */
+    /// @dev Hashes Lock array into commitments hash
     function _deriveCommitmentsHash(Lock[] calldata locks) internal pure returns (bytes32) {
         bytes32[] memory lockHashes = new bytes32[](locks.length);
-
         unchecked {
             for (uint256 i = 0; i < locks.length; ++i) {
                 // Hash each lock directly (no extraction needed)
@@ -140,23 +88,7 @@ abstract contract BaseArbiter {
         return keccak256(abi.encodePacked(lockHashes));
     }
 
-    /**
-     * @notice Validates a claim against Tribunal records and retrieves claim metadata
-     * @dev Validates that:
-     *      - Claim has been filled in Tribunal (via filled())
-     *      - Claim hash is correctly derived from locks
-     *      - Returns claimant, claimHash, and scaling factor from Tribunal
-     *
-     * @param sponsor The account to source tokens from
-     * @param nonce Replay protection nonce
-     * @param expires Expiration timestamp
-     * @param witness Hash of the witness (mandate) data
-     * @param locks Array of locks to validate
-     *
-     * @return claimHash The validated EIP-712 claim hash
-     * @return claimant The bytes32 claimant identifier returned by Tribunal.filled()
-     * @return claimReductionScalingFactor The scaling factor from Tribunal (1e18 = no reduction, 0 = cancelled)
-     */
+    /// @dev Validates claim is filled in Tribunal, returns claimHash, claimant, and scaling factor
     function _validateBatchClaim(
         address sponsor,
         uint256 nonce,
@@ -173,7 +105,6 @@ abstract contract BaseArbiter {
 
         // 3. Get the claim reduction scaling factor
         claimReductionScalingFactor = TRIBUNAL.claimReductionScalingFactor(claimHash);
-
         return (claimHash, claimant, claimReductionScalingFactor);
     }
 }
