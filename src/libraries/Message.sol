@@ -10,8 +10,16 @@ import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 /**
  * @title Message
  * @notice Library for encoding and decoding cross-chain arbiter messages
- * @dev Handles SEND (automatic relay) and POST (user self-relay) message formats with bitmap compression
+ * @dev Encoding/decoding pairs:
+ * - encodeSendContext/decodeSendContext: Encodes relay metadata passed to Tribunal dispatchCallback for SEND operations
+ * - encodePostContext/decodePostContext: Encodes relay metadata passed to Tribunal dispatchCallback for POST operations
+ * - encode/decode: Encodes individual claim data for the Wormhole message payload for send and post operations
+ * - encodeBatchPost/decodeBatchPost: Encodes Wormhole message payload for batch post (claim hashes only, bitmap compressed)
+ * - encodeBatchSend/decodeBatchSend: Encodes Wormhole message payload for batch send (full claim data, length-prefixed)
  */
+
+//TODO: add custom errors
+
 library Message {
     /// @dev Flag bit 0: Allocator signature is present in the message
     uint8 constant HAS_ALLOCATOR_SIG = 0x01;
@@ -50,6 +58,7 @@ library Message {
             require(sponsorSignature.length <= type(uint16).max, "sponsor signature too long");
             flags |= HAS_SPONSOR_SIG;
         }
+        // TODO: add signed quote length requirements here per logic in executor
         flags |= IS_SEND;
 
         // Calculate total size: 1 (flags) + allocatorData + sponsorSignature + 16 (gasLimit) + 32 (totalCost) + signedQuote.length

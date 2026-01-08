@@ -52,7 +52,9 @@ import {IWormholeArbiter} from "./interfaces/IWormholeArbiter.sol";
  */
 
 contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArbiter, BaseArbiter {
+    // TODO: decide on consistency levels
     uint8 constant CONSISTENCY_LEVEL = 201; // safe for now. maybe custom in the future
+    // TODO: decide on max message size
     uint16 constant MAX_MESSAGE_SIZE = 5_000; // 5KB -- solana can only do 1232 bytes so maybe need to reduce
 
     constructor()
