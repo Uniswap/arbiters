@@ -18,6 +18,7 @@ import {
     WormholeParams
 } from "./wormhole/WormholeTypes.sol";
 import {BaseArbiter} from "./abstracts/BaseArbiter.sol";
+import {IWormholeArbiter} from "./interfaces/IWormholeArbiter.sol";
 
 /**
  * @notice Cross-chain arbiter for The Compact using Wormhole infrastructure
@@ -50,14 +51,9 @@ import {BaseArbiter} from "./abstracts/BaseArbiter.sol";
  * - encodePostContext()          Build context for POST via Tribunal
  */
 
-contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter {
+contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArbiter, BaseArbiter {
     uint8 constant CONSISTENCY_LEVEL = 201; // safe for now. maybe custom in the future
     uint16 constant MAX_MESSAGE_SIZE = 5_000; // 5KB -- solana can only do 1232 bytes so maybe need to reduce
-
-    event SingleSendEvent(uint256 indexed chainId, bytes32 indexed claimHash, uint64 indexed sequence);
-    event SinglePostEvent(uint256 indexed chainId, bytes32 indexed claimHash, uint64 indexed sequence);
-    event BatchSendEvent(uint256 indexed chainId, bytes32[] indexed claimHashes, uint64 indexed sequence);
-    event BatchPostEvent(uint256 indexed chainId, bytes32[] indexed claimHashes, uint64 indexed sequence);
 
     constructor()
         ExecutorSendReceive(
@@ -83,8 +79,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         /*claimAmounts*/
         bytes calldata context
     ) external payable refundExcessEth returns (bytes4) {
-        require(compact.arbiter == address(this), "Invalid arbiter");
-        require(context.length >= 1, "Context too short");
+        if (compact.arbiter != address(this)) revert InvalidArbiter();
+        if (context.length < 1) revert ContextTooShort();
 
         uint8 flags;
         assembly {
@@ -183,21 +179,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         );
     }
 
-    /**
-     * @notice Sends a single claim via Wormhole with automatic executor delivery
-     * @dev Validates claim with Tribunal, encodes it, and transmits via Wormhole executor
-     * @param chainId The destination chain ID
-     * @param sponsor The address that authorized the original compact
-     * @param nonce The unique nonce for this compact
-     * @param expires The timestamp when this compact expires
-     * @param witness The witness hash (mandate hash) for EIP-712 validation
-     * @param commitments Array of Lock structs (lockTag, token, amount)
-     * @param allocatorData Optional allocator signature data
-     * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @param params Wormhole delivery parameters (gasLimit, totalCost)
-     * @param signedQuote Signed executor quote for delivery cost verification
-     * @return sequence The Wormhole sequence number for tracking
-     */
+    /// @inheritdoc IWormholeArbiter
     function send(
         uint256 chainId,
         address sponsor,
@@ -257,7 +239,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
         bytes memory encodedBatch = Message.encodeBatchSend(claimants, scalingFactors, batch.claims);
 
-        require(encodedBatch.length <= MAX_MESSAGE_SIZE, "Message exceeds max size");
+        if (encodedBatch.length > MAX_MESSAGE_SIZE) revert MessageExceedsMaxSize();
 
         sequence = _sendMessage(
             encodedBatch,
@@ -271,22 +253,12 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         emit BatchSendEvent(batch.chainId, claimHashes, sequence);
     }
 
-    /**
-     * @notice Sends a batch of claims to a single chain via Wormhole executor
-     * @dev Public entry point for BATCH_SEND. Calls _batchSend() and refunds excess ETH
-     * @param batch BatchSend struct containing claims, chain info, and delivery parameters
-     * @return sequence The Wormhole sequence number for tracking
-     */
+    /// @inheritdoc IWormholeArbiter
     function batchSend(BatchSend calldata batch) external payable virtual refundExcessEth returns (uint64 sequence) {
         return _batchSend(batch);
     }
 
-    /**
-     * @notice Sends multiple batches of claims to multiple chains via Wormhole executor
-     * @dev Loops through batches calling _batchSend() for each. Refunds excess ETH once at end
-     * @param batches Array of BatchSend structs, each targeting a different chain
-     * @return sequences Array of Wormhole sequence numbers, one per batch
-     */
+    /// @inheritdoc IWormholeArbiter
     function multichainBatchSend(BatchSend[] calldata batches)
         external
         payable
@@ -315,23 +287,11 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      */
     function _postMessage(uint32 nonce, bytes memory payload) internal virtual returns (uint64 sequence) {
         uint256 fee = _coreBridge.messageFee();
-        require(address(this).balance >= fee, "Insufficient ETH for wormhole fee");
+        if (address(this).balance < fee) revert InsufficientFee();
         sequence = _coreBridge.publishMessage{value: fee}(nonce, payload, CONSISTENCY_LEVEL);
     }
 
-    /**
-     * @notice Publishes a single claim via Wormhole core for user self-relay
-     * @dev Validates claim with Tribunal, encodes it, publishes to Wormhole core
-     * @param chainId The destination chain ID
-     * @param sponsor The address that authorized the original compact
-     * @param nonce The unique nonce for this compact
-     * @param expires The timestamp when this compact expires
-     * @param witness The witness hash (mandate hash) for EIP-712 validation
-     * @param commitments Array of Lock structs (lockTag, token, amount)
-     * @param allocatorData Optional allocator signature data
-     * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @return sequence The Wormhole sequence number for fetching the VAA
-     */
+    /// @inheritdoc IWormholeArbiter
     function post(
         uint256 chainId,
         address sponsor,
@@ -369,7 +329,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
      * @return sequence The Wormhole sequence number for fetching the VAA
      */
     function _batchPost(uint256 chainId, bytes32[] calldata claimHashes) internal virtual returns (uint64 sequence) {
-        require(claimHashes.length <= 120, "Max 120 claims per batch");
+        if (claimHashes.length > 120) revert TooManyClaims();
 
         bytes32[] memory claimants = new bytes32[](claimHashes.length);
         uint256[] memory scalingFactors = new uint256[](claimHashes.length);
@@ -377,7 +337,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         unchecked {
             for (uint256 i = 0; i < claimHashes.length; ++i) {
                 claimants[i] = TRIBUNAL.filled(claimHashes[i]);
-                require(claimants[i] != bytes32(0), "Claim not filled in Tribunal");
+                if (claimants[i] == bytes32(0)) revert ClaimNotFilled();
                 scalingFactors[i] = TRIBUNAL.claimReductionScalingFactor(claimHashes[i]);
             }
         }
@@ -389,13 +349,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         emit BatchPostEvent(chainId, claimHashes, sequence);
     }
 
-    /**
-     * @notice Publishes a batch of claim hashes via Wormhole core for user self-relay
-     * @dev Uses bitmap compression for up to 120 claims. More efficient than multiple single posts
-     * @param chainId The destination chain ID
-     * @param claimHashes Array of claim hashes to batch (max 120)
-     * @return sequence The Wormhole sequence number for fetching the VAA
-     */
+    /// @inheritdoc IWormholeArbiter
     function batchPost(uint256 chainId, bytes32[] calldata claimHashes)
         external
         payable
@@ -406,12 +360,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         sequence = _batchPost(chainId, claimHashes);
     }
 
-    /**
-     * @notice Publishes multiple batches of claim hashes to multiple chains via Wormhole core
-     * @dev Loops through batches calling _batchPost() for each. Refunds excess ETH once at end
-     * @param batches Array of BatchPost structs, each containing chainId and claimHashes
-     * @return sequences Array of Wormhole sequence numbers, one per batch
-     */
+    /// @inheritdoc IWormholeArbiter
     function multichainBatchPost(BatchPost[] calldata batches)
         external
         payable
@@ -463,7 +412,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         } else if (messageType == MessagePackingType.BATCH_SEND) {
             _processBatchSend(payload);
         } else {
-            revert("Unsupported message type for executor delivery");
+            revert UnsupportedMessageType();
         }
     }
 
@@ -509,37 +458,21 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
         _validateMessageSender(address(uint160(uint256(emitterAddress))));
 
-        require(MessagePackingType(nonce) == expectedType, "Invalid message type");
+        if (MessagePackingType(nonce) != expectedType) revert InvalidMessageType();
 
         return payload;
     }
 
-    /**
-     * @notice Receives and processes a single POST message relayed by user via VAA
-     * @dev Validates VAA via _parseAndValidateVaa(), then decodes and processes the claim
-     * @param encodedVaa The encoded Wormhole VAA fetched by the user
-     */
+    /// @inheritdoc IWormholeArbiter
     function receivePost(bytes calldata encodedVaa) external virtual {
         bytes calldata payload = _parseAndValidateVaa(encodedVaa, MessagePackingType.SINGLE_POST);
         _sendClaim(Message.decode(payload));
     }
 
-    /**
-     * @notice Batch receives multiple POST messages (NOT IMPLEMENTED)
-     * @dev TODO: Implement per the efficiency logic in lib/wormhole-solidity-sdk/src/libraries/CoreBridge.sol
-     *      This would allow users to submit multiple VAAs in a single transaction for gas efficiency.
-     *
-     * @param encodedVAs Array of encoded Wormhole VAAs
-     */
+    /// @inheritdoc IWormholeArbiter
     function receivePosts(bytes[] calldata encodedVAs) external virtual {}
 
-    /**
-     * @notice Receives and processes a batch POST message relayed by user via VAA
-     * @dev VAA contains only claim hashes + claimants + scaling factors (bitmap-compressed).
-     *      Caller provides full claim data which is validated against claim hashes in VAA
-     * @param encodedVaa The encoded Wormhole VAA fetched by the user
-     * @param claims Array of full claim data (must match claim hashes in VAA payload)
-     */
+    /// @inheritdoc IWormholeArbiter
     function receiveBatchPost(bytes calldata encodedVaa, BatchClaimWithLocks[] calldata claims) external virtual {
         bytes calldata payload = _parseAndValidateVaa(encodedVaa, MessagePackingType.BATCH_POST);
         (bytes32[] memory claimants, bytes32[] memory claimHashes, uint256[] memory scalingFactors) =
@@ -547,12 +480,11 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
         for (uint256 i = 0; i < claimants.length; i++) {
             // Validate that the provided claimHash matches the derived claimHash
-            require(
+            if (
                 _deriveClaimHash(
-                    claims[i].sponsor, claims[i].nonce, claims[i].expires, claims[i].witness, claims[i].commitments
-                ) == claimHashes[i],
-                "Invalid claim hash"
-            );
+                        claims[i].sponsor, claims[i].nonce, claims[i].expires, claims[i].witness, claims[i].commitments
+                    ) != claimHashes[i]
+            ) revert InvalidClaimHash();
 
             BatchClaim memory claim = BatchClaim({
                 allocatorData: claims[i].allocatorData,
@@ -573,15 +505,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
     // HELPERS: Context encoding for off-chain use + batch claims
     // ============================================================================
 
-    /**
-     * @notice Encodes context data for SEND operations (automatic executor delivery)
-     * @dev Sets FLAG_IS_SEND (0x04) flag to route through send path in dispatchCallback
-     * @param allocatorData Optional allocator signature data
-     * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @param params Wormhole delivery parameters (gasLimit, totalCost)
-     * @param signedQuote Signed executor quote for delivery cost verification
-     * @return Encoded context bytes for dispatchCallback
-     */
+    /// @inheritdoc IWormholeArbiter
     function encodeSendContext(
         bytes calldata allocatorData,
         bytes calldata sponsorSignature,
@@ -591,13 +515,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
         return Message.encodeSendContext(allocatorData, sponsorSignature, params, signedQuote);
     }
 
-    /**
-     * @notice Encodes context data for POST operations (filler self-relay)
-     * @dev Excludes FLAG_IS_SEND (0x04) to route through post path in dispatchCallback
-     * @param allocatorData Optional allocator signature data
-     * @param sponsorSignature Sponsor's signature authorizing the claim
-     * @return Encoded context bytes for dispatchCallback
-     */
+    /// @inheritdoc IWormholeArbiter
     function encodePostContext(bytes calldata allocatorData, bytes calldata sponsorSignature)
         external
         pure
