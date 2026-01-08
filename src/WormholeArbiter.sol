@@ -61,33 +61,17 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, BaseArbiter 
 
     constructor()
         ExecutorSendReceive(
-            WormholeMappings.getWormhole(block.chainid),
-            WormholeMappings.getWormholeExecutor(block.chainid)
-            // need to check other types of witnesses here too
+            WormholeMappings.getWormhole(block.chainid), WormholeMappings.getWormholeExecutor(block.chainid)
         )
-    {
-        // TODO enforce checks on tribunal in deployment maybe?
-    }
+    {} // TODO enforce checks on tribunal in deployment maybe? maybe verify witnesses / pull them
 
     // ============================================================================
     // DISPATCH CALLBACK: Tribunal entrypoint
     // ============================================================================
 
-    /**
-     * @notice Callback function invoked by Tribunal after a fill is completed on the fill chain
-     * @dev Routes to either SEND (automatic relay) or POST (self-relay) based on context flags.
-     * @param chainId The destination chain ID where the resource lock exists and claim should be submitted
-     * @param compact The batch compact data containing sponsor info, nonce, expiry, and commitments (locks)
-     * @param mandateHash The witness hash used for EIP-712 claim validation
-     * @param claimHash The claim hash that can be claimed after performing the fill
-     * @param claimant The bytes32 claimant identifier (lock tag ++ address) returned by Tribunal
-     * @param claimReductionScalingFactor Scaling factor applied to claim amounts (1e18 = 100%, 0 = cancelled)
-     * @param context Encoded operation context containing:
-     *                - First byte: flags (0x04 = SEND operation, 0x00 = POST operation)
-     *                - For SEND: allocator data, sponsor signature, Wormhole params, and signed executor quote
-     *                - For POST: allocator data and sponsor signature only
-     * @return Function selector to confirm successful execution to Tribunal
-     */
+    /// @inheritdoc IDispatchCallback
+    /// @dev Routes to SEND or POST based on context flags.
+    ///      Context first byte: 0x04 = SEND (executor delivery), 0x00 = POST (self-relay)
     function dispatchCallback(
         uint256 chainId,
         BatchCompact calldata compact,
