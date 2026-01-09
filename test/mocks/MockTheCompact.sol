@@ -2,28 +2,34 @@
 pragma solidity ^0.8.28;
 
 import {ClaimHashLib} from "lib/the-compact/src/lib/ClaimHashLib.sol";
-import {BatchClaim as CompactBatchClaim} from "the-compact/src/types/BatchClaims.sol";
+import {BatchClaim} from "the-compact/src/types/BatchClaims.sol";
 
 contract MockTheCompact {
-    using ClaimHashLib for CompactBatchClaim;
+    using ClaimHashLib for BatchClaim;
 
     bytes32 public latestClaimHash;
 
     mapping(bytes32 => bool) public claimHashes;
+    mapping(bytes32 => BatchClaim) public receivedClaims;
 
     uint256 public callCount;
 
-    function batchClaim(CompactBatchClaim calldata claim) external returns (bytes32) {
+    function batchClaim(BatchClaim calldata claim) external returns (bytes32) {
         callCount++;
         (bytes32 claimHash,) = claim.toClaimHashAndTypehash();
         latestClaimHash = claimHash;
         claimHashes[claimHash] = true;
+        receivedClaims[claimHash] = claim;
         return latestClaimHash;
     }
 
     // Explicit getter to ensure it works with etched contracts
     function getClaimHash(bytes32 claimHash) external view returns (bool) {
         return claimHashes[claimHash];
+    }
+
+    function getReceivedClaim(bytes32 claimHash) external view returns (BatchClaim memory) {
+        return receivedClaims[claimHash];
     }
 
     // Getter for call count

@@ -6,9 +6,10 @@ import {WormholeArbiter} from "src/WormholeArbiter.sol";
 import {BaseArbiter} from "src/abstracts/BaseArbiter.sol";
 import {QuoteLib} from "lib/wormhole-solidity-sdk/src/testing/ExecutorTest.sol";
 import {WormholeParams, BatchSend, BatchClaimWithLocks} from "src/wormhole/WormholeTypes.sol";
-
+import {BatchClaim} from "the-compact/src/types/BatchClaims.sol";
+import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
 import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
-
+import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 import {ExecutorTest} from "wormhole-solidity-sdk/testing/ExecutorTest.sol";
 import {CHAIN_ID_ARBITRUM, CHAIN_ID_BASE} from "wormhole-solidity-sdk/constants/Chains.sol";
 
@@ -19,71 +20,94 @@ import {CHAIN_ID_ARBITRUM, CHAIN_ID_BASE} from "wormhole-solidity-sdk/constants/
 // the coreBridge to a new set of Guardian keys to allow signing the VAA with the new guardian keys.
 
 contract WormholeArbiterTest is ExecutorTest {
-    //wormhole arbiters for arbitrum and base
-    // forge-lint: disable-next-line(mixed-case-variable)
+    /* forge-lint-disable mixed-case-variable */
+
     WormholeArbiter public WormholeArbiterArbitrum;
-    // forge-lint: disable-next-line(mixed-case-variable)
     WormholeArbiter public WormholeArbiterBase;
 
-    //tribunals for arbitrum and base
-    // forge-lint: disable-next-line(mixed-case-variable)
     TribunalMock public TribunalMockArbitrum;
-    // forge-lint: disable-next-line(mixed-case-variable)
     TribunalMock public TribunalMockBase;
 
-    //addresses to etch the tribunal and compact mock to
-    address constant THE_COMPACT_ADDRESS = 0x00000000000000171ede64904551eeDF3C6C9788;
     MockTheCompact public compactMock;
+    address constant THE_COMPACT_ADDRESS = 0x00000000000000171ede64904551eeDF3C6C9788; //compact address to etch to
 
-    //salt for the deterministic addresses
+    // constants plus mock data for the send
     bytes32 public salt = bytes32(uint256(0x1234));
-
-    // create some mock data for the send
     uint256 constant BASE_CHAIN_ID_STANDARD = 8453;
-    uint128 constant GAS_LIMIT = 1_000_000;
-
-    // claim data
+    uint128 constant GAS_LIMIT = 2_000_000;
     address constant SPONSOR = 0x1111111111111111111111111111111111111111;
     uint256 constant NONCE = 0x2222222222222222222222222222222222222222222222222222222222222222;
     uint256 constant EXPIRES = 0x3333333333333333333333333333333333333333333333333333333333333333;
+    bytes32 constant CLAIMANT = 0x8888888888888888888888888888888888888888888888888888888888888888;
     bytes32 constant WITNESS = keccak256("witness");
-    bytes32 constant CLAIMANT = 0x9999999999999999999999999999999999999999999999999999999999999999;
+    bytes constant ALLOCATOR_DATA = abi.encodePacked(keccak256("allocator_data"));
+    bytes constant SPONSOR_SIGNATURE = abi.encodePacked(keccak256("sponsor_signature"));
 
     // quote data
     bytes public quote;
     uint256 public quoteCost;
     address public filler;
 
-    // Helper function to create a single lock
-    function createSingleLock() internal pure returns (Lock[] memory) {
-        Lock[] memory locks = new Lock[](1);
-        locks[0] = Lock({
-            lockTag: bytes12(uint96(0x123456789ABC)),
-            token: address(0x1111111111111111111111111111111111111111),
-            amount: 1000e18
-        });
+    // Helper function to create n locks with varying values
+    function createLocks(uint256 n) internal pure returns (Lock[] memory) {
+        Lock[] memory locks = new Lock[](n);
+        for (uint256 i = 0; i < n; i++) {
+            locks[i] = Lock({
+                lockTag: bytes12(uint96(0x123456789ABC + i)), token: address(uint160(i + 1)), amount: (i + 1) * 1000e18
+            });
+        }
         return locks;
     }
 
-    // Helper function to create multiple locks
-    function createMultipleLocks() internal pure returns (Lock[] memory) {
-        Lock[] memory locks = new Lock[](3);
-        locks[0] = Lock({
-            lockTag: bytes12(uint96(0x123456789ABC)),
-            token: address(0x1111111111111111111111111111111111111111),
-            amount: 1000e18
-        });
-        locks[1] = Lock({
-            lockTag: bytes12(uint96(0xDEF012345678)),
-            token: address(0x2222222222222222222222222222222222222222),
-            amount: 2000e18
-        });
-        locks[2] = Lock({
-            lockTag: bytes12(uint96(0x9ABCDEF01234)),
-            token: address(0x3333333333333333333333333333333333333333),
-            amount: 3000e18
-        });
-        return locks;
+    // Helper function to verify BatchClaim matches expected input data
+    function assertClaimEquality(
+        BatchClaim memory receivedClaim,
+        address expectedSponsor,
+        uint256 expectedNonce,
+        uint256 expectedExpires,
+        bytes32 expectedWitness,
+        bytes memory expectedAllocatorData,
+        bytes memory expectedSponsorSignature,
+        Lock[] memory expectedLocks,
+        bytes32 expectedClaimant,
+        uint256 scalingFactor
+    ) internal {
+        // Direct field comparisons
+        assertEq(receivedClaim.sponsor, expectedSponsor);
+        assertEq(receivedClaim.nonce, expectedNonce);
+        assertEq(receivedClaim.expires, expectedExpires);
+        assertEq(receivedClaim.witness, expectedWitness);
+        assertEq(receivedClaim.allocatorData, expectedAllocatorData);
+        assertEq(receivedClaim.sponsorSignature, expectedSponsorSignature);
+        assertEq(receivedClaim.witnessTypestring, WITNESS_TYPESTRING);
+
+        // Compare Lock[] to BatchClaimComponent[]
+        assertEq(receivedClaim.claims.length, expectedLocks.length);
+
+        for (uint256 i = 0; i < expectedLocks.length; i++) {
+            Lock memory lock = expectedLocks[i];
+            BatchClaimComponent memory component = receivedClaim.claims[i];
+
+            // Verify id = lockTag | token
+            uint256 expectedId = uint256(bytes32(lock.lockTag)) | uint256(uint160(lock.token));
+            assertEq(component.id, expectedId);
+
+            // Verify allocatedAmount = original amount
+            assertEq(component.allocatedAmount, lock.amount);
+
+            // Verify portions - empty if cancelled (scalingFactor == 0)
+            if (scalingFactor == 0) {
+                assertEq(component.portions.length, 0);
+            } else {
+                assertEq(component.portions.length, 1);
+                assertEq(component.portions[0].claimant, uint256(expectedClaimant));
+
+                // Verify scaled amount
+                uint256 expectedScaledAmount =
+                    scalingFactor == 1e18 ? lock.amount : (lock.amount * scalingFactor) / 1e18;
+                assertEq(component.portions[0].amount, expectedScaledAmount);
+            }
+        }
     }
 
     // helper function to craft a signed quote for the send test
@@ -94,11 +118,7 @@ contract WormholeArbiterTest is ExecutorTest {
         virtual
         returns (bytes memory signedQuote, uint256 totalCost)
     {
-        // Hardcoded values for testing
-        uint64 baseFee = 1e9;
-        uint64 destinationGasPrice = 1e9;
-        uint64 sourcePrice = 1e9;
-        uint64 destinationPrice = 1e9;
+        uint64 fee = 1e9;
         uint64 expiryTime = uint64(block.timestamp + 1 hours);
 
         signedQuote = QuoteLib.signAndPackQuote(
@@ -108,38 +128,31 @@ contract WormholeArbiterTest is ExecutorTest {
                 chainId(),
                 dstChain,
                 expiryTime,
-                baseFee,
-                destinationGasPrice,
-                sourcePrice,
-                destinationPrice
+                fee, // baseFee
+                fee, // destinationGasPrice
+                fee, // sourcePrice
+                fee // destinationPrice
             ),
             quoterSecret
         );
 
-        // Calculate total cost: ((destinationGasPrice × gasLimit × destinationPrice) / sourcePrice) + baseFee
-        // forge-lint: disable-next-line(mixed-case-variable)
-        uint256 destinationCostInUSD = uint256(destinationGasPrice) * gasLimit * uint256(destinationPrice);
-        uint256 costInSourceNative = destinationCostInUSD / uint256(sourcePrice);
-        totalCost = costInSourceNative + uint256(baseFee);
+        // Cost: ((destGasPrice × gasLimit × destPrice) / srcPrice) + baseFee
+        // All prices = fee, so: (gasLimit × fee) + fee
+        totalCost = uint256(gasLimit) * fee + fee;
     }
 
     function setUp() public override {
-        //set up the forks
         setUpFork(CHAIN_ID_ARBITRUM, vm.envString("ARBITRUM_RPC_URL"));
         setUpFork(CHAIN_ID_BASE, vm.envString("BASE_RPC_URL"));
 
-        // --- Deploy Tribunal and WormholeArbiter on Arbitrum fork ---
         selectFork(CHAIN_ID_ARBITRUM);
 
-        // filler address with 5 eth funding
         filler = makeAddr("filler");
-        vm.deal(filler, 5 ether); // Fund it
+        vm.deal(filler, 5 ether);
 
-        // Deploy WormholeArbiter at deterministic address first to get TRIBUNAL_ADDRESS
+        // deploy wormhole arbiter + etch tribunal with TribunalMock on Arb
         WormholeArbiterArbitrum = new WormholeArbiter{salt: salt}();
         address TRIBUNAL_ADDRESS = WormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
-
-        // Deploy TribunalMock and set its code to TRIBUNAL_ADDRESS
         TribunalMock arbitrumTribunalMock = new TribunalMock();
         vm.etch(TRIBUNAL_ADDRESS, address(arbitrumTribunalMock).code);
         TribunalMockArbitrum = TribunalMock(TRIBUNAL_ADDRESS);
@@ -147,13 +160,10 @@ contract WormholeArbiterTest is ExecutorTest {
         // get quote cost (throwaway gas price for now)
         (quote, quoteCost) = craftSignedQuote(CHAIN_ID_BASE, GAS_LIMIT);
 
-        // --- Deploy Tribunal, MockTheCompact, and WormholeArbiter on Base fork ---
         selectFork(CHAIN_ID_BASE);
 
-        // Deploy WormholeArbiter at deterministic address (same TRIBUNAL_ADDRESS)
+        // deploy wormhole arbiter + etch tribunal with TribunalMock
         WormholeArbiterBase = new WormholeArbiter{salt: salt}();
-
-        // Deploy TribunalMock and set its code to TRIBUNAL_ADDRESS
         TribunalMock baseTribunalMock = new TribunalMock();
         vm.etch(TRIBUNAL_ADDRESS, address(baseTribunalMock).code);
         TribunalMockBase = TribunalMock(TRIBUNAL_ADDRESS);
@@ -165,7 +175,7 @@ contract WormholeArbiterTest is ExecutorTest {
         compactMock = MockTheCompact(THE_COMPACT_ADDRESS);
     }
 
-    function test_deployments_success() public view {
+    function test_deployments_success() public {
         // Tribunals deployed to same address on both forks
         assertEq(address(TribunalMockArbitrum), address(TribunalMockBase));
         assertTrue(address(TribunalMockArbitrum) != address(0));
@@ -176,31 +186,25 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Compact mock etched to correct address
         assertEq(address(compactMock), THE_COMPACT_ADDRESS);
+
+        // check that the filler has 5 eth
+        selectFork(CHAIN_ID_ARBITRUM);
+        assertEq(address(filler).balance, 5 ether);
     }
 
-    // test full e2e send and claim flow making sure
     // TODO: check WormholeExecutor.sol cases too
     // TODO: check for expected calls emits on the lower level contracts
     // TODO: make sure publish and relay sets peer address to the arbiter address
     function test_send_single_send() public {
-        // set to arbitrum
         selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei); // for this test, message fees will be 0, will be tested later
 
-        // set message fees to 0
-        setMessageFee(0 gwei);
-
-        //get claim hash
-        bytes32 claimHash =
-            WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, createSingleLock());
-
-        //set claim hash in mock tribunal
+        // create single lock + get claim hash + set in mock tribunal
+        Lock[] memory locks = createLocks(1);
+        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
         TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
-        //create single lock
-        Lock[] memory locks = createSingleLock();
-
-        //send claim
-        // TODO: check for expected emits
+        // filler sends the claim (TODO: check for expected emits)
         vm.prank(filler);
         vm.recordLogs();
         WormholeArbiterArbitrum.send{
@@ -212,8 +216,8 @@ contract WormholeArbiterTest is ExecutorTest {
             EXPIRES,
             WITNESS,
             locks,
-            bytes(""),
-            bytes(""),
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
             WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
             quote
         );
@@ -230,14 +234,26 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Switch back to arbitrum to execute the relay
         selectFork(CHAIN_ID_ARBITRUM);
-
-        //execute the relay
         executeRelay();
 
+        //check that the claim hash is set as marked on the mock compact
         selectFork(CHAIN_ID_BASE);
-
-        //check that the claim hash is set as marked in the mock compact
         assertTrue(compactMock.getClaimHash(claimHash));
+
+        // check that the received claim matches the input data
+        BatchClaim memory receivedClaim = compactMock.getReceivedClaim(claimHash);
+        assertClaimEquality(
+            receivedClaim,
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            locks,
+            CLAIMANT,
+            1e18 // no scaling
+        );
     }
 
     function test_send_single_send_dispatch_callback() public {
@@ -248,7 +264,7 @@ contract WormholeArbiterTest is ExecutorTest {
         setMessageFee(0 gwei);
 
         // create single lock
-        Lock[] memory locks = createSingleLock();
+        Lock[] memory locks = createLocks(1);
 
         // create BatchCompact
         BatchCompact memory compact = BatchCompact({
@@ -308,8 +324,8 @@ contract WormholeArbiterTest is ExecutorTest {
         setMessageFee(0 gwei);
 
         // Create 2 batch claims with different data
-        Lock[] memory locks1 = createSingleLock();
-        Lock[] memory locks2 = createMultipleLocks();
+        Lock[] memory locks1 = createLocks(1);
+        Lock[] memory locks2 = createLocks(3);
 
         // Create claim 1
         uint256 nonce1 = NONCE;
@@ -390,10 +406,10 @@ contract WormholeArbiterTest is ExecutorTest {
         setMessageFee(0 gwei);
 
         // Create 4 claims with different data
-        Lock[] memory locks1 = createSingleLock();
-        Lock[] memory locks2 = createMultipleLocks();
-        Lock[] memory locks3 = createSingleLock();
-        Lock[] memory locks4 = createMultipleLocks();
+        Lock[] memory locks1 = createLocks(1);
+        Lock[] memory locks2 = createLocks(3);
+        Lock[] memory locks3 = createLocks(1);
+        Lock[] memory locks4 = createLocks(3);
 
         // Create claim 1
         uint256 nonce1 = NONCE;
