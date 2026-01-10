@@ -39,6 +39,9 @@ interface IWormholeArbiter {
 
     // ======== Custom Errors ========
 
+    /// @notice Thrown when caller is not the Tribunal
+    error UnauthorizedCaller();
+
     /// @notice Thrown when compact.arbiter doesn't match this contract
     error InvalidArbiter();
 

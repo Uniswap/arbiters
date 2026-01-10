@@ -78,6 +78,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
         uint256[] calldata, //claimAmounts unused
         bytes calldata context
     ) external payable refundExcessEth returns (bytes4) {
+        if (msg.sender != TRIBUNAL_ADDRESS) revert UnauthorizedCaller();
         if (compact.arbiter != address(this)) revert InvalidArbiter();
         if (context.length < 1) revert ContextTooShort();
 
