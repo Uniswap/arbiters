@@ -8,7 +8,7 @@ Currently, only the **Wormhole Arbiter** is compatible with The Compact V1.
 
 ## Wormhole Arbiter
 
-Cross-chain arbiter using Wormhole messaging infrastructure.
+Cross-chain arbiter using Wormhole messaging infrastructure at `src/WormholeArbiter.sol`.
 
 ### Overview
 
@@ -90,7 +90,7 @@ The arbiter validates fills with Tribunal before transmission:
 | `Message` | `src/libraries/Message.sol` | Encoding/decoding, bitmap compression for batches |
 | `WormholeMappings` | `src/wormhole/WormholeMappings.sol` | Chain ID conversions, Wormhole contract addresses |
 
-### Development
+## Development
 
 ```bash
 forge build      # Build contracts
