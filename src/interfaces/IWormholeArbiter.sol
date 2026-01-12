@@ -69,6 +69,9 @@ interface IWormholeArbiter {
     /// @notice Thrown when provided claim data doesn't match claim hash in VAA
     error InvalidClaimHash();
 
+    /// @notice Thrown when claims array length doesn't match decoded batch size
+    error ClaimsArrayLengthMismatch();
+
     // ======== SEND Functions (Automatic Executor Delivery) ========
 
     /// @notice Sends a single claim via Wormhole executor for automatic delivery

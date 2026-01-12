@@ -1355,6 +1355,64 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         }
     }
 
+    function test_batch_post_claims_array_length_mismatch() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei);
+
+        // Create 2 legitimate claims and set in tribunal
+        Lock[] memory locks1 = createLocks(1);
+        Lock[] memory locks2 = createLocks(1);
+        BatchClaimWithLocks memory claim1 = createBatchClaimWithLocks(0, locks1);
+        BatchClaimWithLocks memory claim2 = createBatchClaimWithLocks(1, locks2);
+
+        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(
+            claim1.sponsor, claim1.nonce, claim1.expires, claim1.witness, locks1
+        );
+        bytes32 claimHash2 = WormholeArbiterArbitrum.deriveClaimHash(
+            claim2.sponsor, claim2.nonce, claim2.expires, claim2.witness, locks2
+        );
+
+        TribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
+        TribunalMockArbitrum.setFilled(claimHash2, CLAIMANT);
+
+        // Send batch post with 2 valid claim hashes
+        bytes32[] memory claimHashes = new bytes32[](2);
+        claimHashes[0] = claimHash1;
+        claimHashes[1] = claimHash2;
+        vm.prank(filler);
+        vm.recordLogs();
+        WormholeArbiterArbitrum.batchPost(BASE_CHAIN_ID_STANDARD, claimHashes);
+        bytes memory encodedVaa = fetchEncodedVaa();
+
+        // Switch to Base for receive tests
+        selectFork(CHAIN_ID_BASE);
+
+        // Test 1: Too few claims (1 instead of 2)
+        {
+            BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](1);
+            claims[0] = claim1;
+            vm.expectRevert(IWormholeArbiter.ClaimsArrayLengthMismatch.selector);
+            WormholeArbiterBase.receiveBatchPost(encodedVaa, claims);
+        }
+
+        // Test 2: Too many claims (3 instead of 2)
+        {
+            BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](3);
+            claims[0] = claim1;
+            claims[1] = claim2;
+            claims[2] = claim1; // extra claim
+            vm.expectRevert(IWormholeArbiter.ClaimsArrayLengthMismatch.selector);
+            WormholeArbiterBase.receiveBatchPost(encodedVaa, claims);
+        }
+
+        // Test 3: Empty claims array
+        {
+            BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](0);
+            vm.expectRevert(IWormholeArbiter.ClaimsArrayLengthMismatch.selector);
+            WormholeArbiterBase.receiveBatchPost(encodedVaa, claims);
+        }
+    }
+
     // test batch post with a bunch of different claimants and scaling factors in a big array to test bitmap encoding
     function test_batch_post_big_array_bitmap_encoding_and_decoding() public {
         selectFork(CHAIN_ID_ARBITRUM);

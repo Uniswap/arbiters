@@ -271,6 +271,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
         (bytes32[] memory claimants, bytes32[] memory claimHashes, uint256[] memory scalingFactors) =
             Message.decodeBatchPost(payload);
 
+        if (claims.length != claimants.length) revert ClaimsArrayLengthMismatch();
+
         for (uint256 i = 0; i < claimants.length; i++) {
             if (
                 _deriveClaimHash(
