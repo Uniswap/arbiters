@@ -13,6 +13,14 @@ import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
 import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 import {ExecutorTest} from "wormhole-solidity-sdk/testing/ExecutorTest.sol";
 import {CHAIN_ID_ARBITRUM, CHAIN_ID_BASE} from "wormhole-solidity-sdk/constants/Chains.sol";
+import {RequestLib} from "wormhole-sdk/Executor/Request.sol";
+import {RelayInstructionLib} from "wormhole-sdk/Executor/RelayInstruction.sol";
+import {ICoreBridge} from "wormhole-sdk/interfaces/ICoreBridge.sol";
+import {IExecutor} from "wormhole-sdk/interfaces/IExecutor.sol";
+import {Message} from "src/libraries/Message.sol";
+import {WormholeMappings} from "src/wormhole/WormholeMappings.sol";
+import {AdvancedWormholeOverride} from "wormhole-sdk/testing/WormholeOverride.sol";
+import {CoreBridgeLib} from "wormhole-sdk/libraries/CoreBridge.sol";
 
 // to understand how these tests work, see the example at: https://github.com/wormhole-foundation/wormhole-solidity-sdk/blob/main/test/Executor.t.sol
 // Similar to the example, this test uses the executor test harness from the wormhole-solidity-sdk at lib/wormhole-solidity-sdk/src/testing/ExecutorTest.sol
@@ -22,6 +30,7 @@ import {CHAIN_ID_ARBITRUM, CHAIN_ID_BASE} from "wormhole-solidity-sdk/constants/
 
 contract WormholeArbiterTest is ExecutorTest {
     /* forge-lint-disable mixed-case-variable */
+    using AdvancedWormholeOverride for ICoreBridge;
 
     WormholeArbiter public WormholeArbiterArbitrum;
     WormholeArbiter public WormholeArbiterBase;
@@ -179,6 +188,40 @@ contract WormholeArbiterTest is ExecutorTest {
         // Cost: ((destGasPrice × gasLimit × destPrice) / srcPrice) + baseFee
         // All prices = fee, so: (gasLimit × fee) + fee
         totalCost = uint256(gasLimit) * fee + fee;
+    }
+
+    // Helper to call Message.encode with calldata (needed because Message.encode uses calldatacopy)
+    function encodeMessageHelper(
+        address sponsor,
+        uint256 nonce,
+        uint256 expires,
+        bytes32 witness,
+        Lock[] calldata commitments,
+        bytes calldata allocatorData,
+        bytes calldata sponsorSignature,
+        bytes32 claimant,
+        uint256 claimReductionScalingFactor
+    ) external pure returns (bytes memory) {
+        return Message.encode(
+            sponsor,
+            nonce,
+            expires,
+            witness,
+            commitments,
+            allocatorData,
+            sponsorSignature,
+            claimant,
+            claimReductionScalingFactor
+        );
+    }
+
+    // Helper to call Message.encodeBatchSend with calldata
+    function encodeBatchSendHelper(
+        bytes32[] memory claimants,
+        uint256[] memory claimReductionScalingFactors,
+        BatchClaimWithLocks[] calldata claims
+    ) external pure returns (bytes memory) {
+        return Message.encodeBatchSend(claimants, claimReductionScalingFactors, claims);
     }
 
     function setUp() public override {
@@ -1265,10 +1308,153 @@ contract WormholeArbiterTest is ExecutorTest {
     ///// send test edge cases / low level cases trib side /////
 
     // check to make sure the core bridge publishMessage is called with the correct arguments
-    function test_send_publish_message_correct_arguments() public {}
+    function test_send_publish_message_and_request_execution_correct_arguments() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        uint256 testMessageFee = 0.01 gwei;
+        setMessageFee(testMessageFee);
 
-    // check to make sure the executor requestExecution is called with the correct arguments
-    function test_send_request_execution_correct_arguments() public {}
+        // Create single lock + get claim hash + set in mock tribunal
+        Lock[] memory locks = createLocks(1);
+        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+
+        // Get contract addresses from WormholeMappings
+        address coreBridge = WormholeMappings.getWormhole(block.chainid);
+        address executor = WormholeMappings.getWormholeExecutor(block.chainid);
+
+        // Pre-compute expected values
+        bytes32 peerAddress = bytes32(uint256(uint160(address(WormholeArbiterArbitrum))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(block.chainid); // 23
+        uint16 wormholeBaseChainId = WormholeMappings.toWormholeId(BASE_CHAIN_ID_STANDARD); // 30
+        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(WormholeArbiterArbitrum));
+
+        // Expected payload from Message.encode
+        bytes memory expectedPayload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        // Expected relay instructions
+        bytes memory expectedRelayInstructions = RelayInstructionLib.encodeGas(GAS_LIMIT, 0);
+
+        // Expected request
+        bytes memory expectedRequest =
+            RequestLib.encodeVaaMultiSigRequest(wormholeArbitrumChainId, peerAddress, expectedSequence);
+
+        // Set up vm.expectCall for coreBridge.publishMessage
+        // Signature: publishMessage(uint32 nonce, bytes memory payload, uint8 consistencyLevel)
+        uint8 CONSISTENCY_LEVEL = 201;
+        uint32 expectedNonce = 0; // MessagePackingType.SINGLE_SEND
+        vm.expectCall(
+            coreBridge,
+            testMessageFee,
+            abi.encodeCall(ICoreBridge.publishMessage, (expectedNonce, expectedPayload, CONSISTENCY_LEVEL))
+        );
+
+        // Set up vm.expectCall for executor.requestExecution
+        // Signature: requestExecution(uint16 dstChain, bytes32 dstAddr, address refundAddr, bytes signedQuote, bytes requestBytes, bytes relayInstructions)
+        vm.expectCall(
+            executor,
+            quoteCost - testMessageFee,
+            abi.encodeCall(
+                IExecutor.requestExecution,
+                (wormholeBaseChainId, peerAddress, filler, quote, expectedRequest, expectedRelayInstructions)
+            )
+        );
+
+        // Execute send as filler
+        vm.prank(filler);
+        WormholeArbiterArbitrum.send{
+            value: quoteCost
+        }(
+            BASE_CHAIN_ID_STANDARD,
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            locks,
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
+            quote
+        );
+    }
+
+    // check to make sure the core bridge publishMessage is called with the correct arguments for batch send
+    function test_batch_send_publish_message_and_request_execution_correct_arguments() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        uint256 testMessageFee = 0.01 gwei;
+        setMessageFee(testMessageFee);
+
+        // Create 3 claims with varying locks
+        uint256 numClaims = 3;
+        BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](numClaims);
+        bytes32[] memory claimHashes = new bytes32[](numClaims);
+        bytes32[] memory claimants = new bytes32[](numClaims);
+        uint256[] memory scalingFactors = new uint256[](numClaims);
+
+        for (uint256 i = 0; i < numClaims; i++) {
+            Lock[] memory locks = createLocks(i + 1); // 1, 2, 3 locks respectively
+            claims[i] = createBatchClaimWithLocks(i, locks);
+            claimHashes[i] = WormholeArbiterArbitrum.deriveClaimHash(
+                claims[i].sponsor, claims[i].nonce, claims[i].expires, claims[i].witness, locks
+            );
+            claimants[i] = bytes32(uint256(CLAIMANT) + i);
+            scalingFactors[i] = 1e18; // full claim
+            TribunalMockArbitrum.setFilled(claimHashes[i], claimants[i]);
+        }
+
+        // Get contract addresses from WormholeMappings
+        address coreBridge = WormholeMappings.getWormhole(block.chainid);
+        address executor = WormholeMappings.getWormholeExecutor(block.chainid);
+
+        // Pre-compute expected values
+        bytes32 peerAddress = bytes32(uint256(uint160(address(WormholeArbiterArbitrum))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(block.chainid); // 23
+        uint16 wormholeBaseChainId = WormholeMappings.toWormholeId(BASE_CHAIN_ID_STANDARD); // 30
+        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(WormholeArbiterArbitrum));
+
+        // Expected payload from Message.encodeBatchSend
+        bytes memory expectedPayload = this.encodeBatchSendHelper(claimants, scalingFactors, claims);
+
+        // Expected relay instructions
+        bytes memory expectedRelayInstructions = RelayInstructionLib.encodeGas(GAS_LIMIT, 0);
+
+        // Expected request
+        bytes memory expectedRequest =
+            RequestLib.encodeVaaMultiSigRequest(wormholeArbitrumChainId, peerAddress, expectedSequence);
+
+        // Set up vm.expectCall for coreBridge.publishMessage
+        uint8 CONSISTENCY_LEVEL = 201;
+        uint32 expectedNonce = 1; // MessagePackingType.BATCH_SEND
+        vm.expectCall(
+            coreBridge,
+            testMessageFee,
+            abi.encodeCall(ICoreBridge.publishMessage, (expectedNonce, expectedPayload, CONSISTENCY_LEVEL))
+        );
+
+        // Set up vm.expectCall for executor.requestExecution
+        vm.expectCall(
+            executor,
+            quoteCost - testMessageFee,
+            abi.encodeCall(
+                IExecutor.requestExecution,
+                (wormholeBaseChainId, peerAddress, filler, quote, expectedRequest, expectedRelayInstructions)
+            )
+        );
+
+        // Build the BatchSend struct
+        BatchSend memory batch = BatchSend({
+            chainId: BASE_CHAIN_ID_STANDARD,
+            claims: claims,
+            gasLimit: GAS_LIMIT,
+            totalCost: quoteCost,
+            signedQuote: quote
+        });
+
+        // Execute batchSend as filler
+        vm.prank(filler);
+        WormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
+    }
 
     // test for dispatch with invalid arbiter
     function test_send_dispatch_invalid_arbiter() public {
@@ -1601,31 +1787,158 @@ contract WormholeArbiterTest is ExecutorTest {
     ///// send test edge cases arbiter side /////
 
     // test for executor send with invalid emitter address
-    function test_executor_send_invalid_emitter_address() public {}
+    function test_executor_send_invalid_emitter_address() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload that would normally work
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        // Craft a VAA with a fake emitter address (not the real arbiter address)
+        // The real arbiter is at WormholeArbiterBase address, but we'll use a different address
+        address fakeEmitter = address(0xdeadbeef);
+        bytes32 fakeEmitterAddress = bytes32(uint256(uint160(fakeEmitter)));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161); // Arbitrum = 23
+
+        // Use craftVaa to create a signed VAA with the fake emitter
+        // nonce = 0 for SINGLE_SEND
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, fakeEmitterAddress, payload);
+
+        // Try to deliver this VAA to the REAL arbiter - it should reject because
+        // emitter address (fakeEmitter) != address(WormholeArbiterBase)
+        vm.expectRevert("Message not from corresponding arbiter");
+        WormholeArbiterBase.executeVAAv1(encodedVaa);
+    }
 
     // test for executor send with invalid chain ID (unsupported chain)
     function test_executor_send_invalid_chain_id() public {
-        // TODO: Mock executeVAAv1 to pass an unsupported Wormhole chain ID (e.g., 99)
-        // Expect revert with "Unsupported chain"
-        // This tests _executeVaa's chain ID validation
-    }
+        selectFork(CHAIN_ID_BASE);
 
-    // test for batch send with invalid chain ID (unsupported chain)
-    function test_executor_batch_send_invalid_chain_id() public {
-        // TODO: Mock executeVAAv1 to pass an unsupported Wormhole chain ID (e.g., 99)
-        // Expect revert with "Unsupported chain"
-        // This tests _executeVaa's chain ID validation for batch messages
+        // Create a valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        // Craft a VAA with a valid emitter (the real arbiter) but UNSUPPORTED chain ID
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 unsupportedChainId = 99; // Not in WormholeMappings (supported: 2, 23, 30, 44)
+
+        bytes memory encodedVaa = coreBridge().craftVaa(unsupportedChainId, realEmitterAddress, payload);
+
+        // Should reject because chain ID 99 is not supported
+        vm.expectRevert("Unsupported chain");
+        WormholeArbiterBase.executeVAAv1(encodedVaa);
     }
 
     // test for executor send with value not equal to 0 (WormholeExecutor.sol)
-    function test_executor_send_value_not_zero() public {}
+    function test_executor_send_value_not_zero() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload and VAA
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161); // 23
+
+        // Set nonce to 0 (SINGLE_SEND) for valid message type
+        coreBridge().setNonce(0);
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, realEmitterAddress, payload);
+
+        // Call with msg.value > 0, should revert from _executeVaaDefaultMsgValueCheck
+        vm.expectRevert();
+        WormholeArbiterBase.executeVAAv1{value: 1 wei}(encodedVaa);
+    }
 
     // test for executor send with invalid nonce (WormholeExecutor.sol)
-    function test_executor_send_invalid_nonce() public {}
+    function test_executor_send_invalid_nonce() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161); // 23
+
+        // Set nonce to 2 (SINGLE_POST) - valid enum but not valid for executor SEND path
+        // MessagePackingType: 0=SINGLE_SEND, 1=BATCH_SEND, 2=SINGLE_POST, 3=BATCH_POST
+        // Executor only handles SINGLE_SEND and BATCH_SEND
+        coreBridge().setNonce(2);
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, realEmitterAddress, payload);
+
+        // Should revert with UnsupportedMessageType because nonce 2 (SINGLE_POST) is not valid for executor
+        vm.expectRevert(IWormholeArbiter.UnsupportedMessageType.selector);
+        WormholeArbiterBase.executeVAAv1(encodedVaa);
+    }
 
     // test for executor with invalid vaa signature (WormholeExecutor.sol)
-    function test_executor_send_invalid_vaa_signature() public {}
+    function test_executor_send_invalid_vaa_signature() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload and VAA
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+
+        coreBridge().setNonce(0); // SINGLE_SEND
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, realEmitterAddress, payload);
+
+        // Corrupt the signature by flipping a byte in the signature area
+        // VAA structure: version(1) + guardianSetIndex(4) + sigCount(1) + signatures(66 each)
+        // Signatures start at byte 6, flip byte 10 (inside first signature's r value)
+        encodedVaa[10] = bytes1(uint8(encodedVaa[10]) ^ 0xFF);
+
+        // Should revert due to invalid signature
+        vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
+        WormholeArbiterBase.executeVAAv1(encodedVaa);
+    }
 
     // test for executor batch send with invalid vaa signature (WormholeExecutor.sol)
-    function test_executor_batch_send_invalid_vaa_signature() public {}
+    function test_executor_batch_send_invalid_vaa_signature() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create batch payload
+        uint256 numClaims = 2;
+        BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](numClaims);
+        bytes32[] memory claimants = new bytes32[](numClaims);
+        uint256[] memory scalingFactors = new uint256[](numClaims);
+
+        for (uint256 i = 0; i < numClaims; i++) {
+            Lock[] memory locks = createLocks(1);
+            claims[i] = createBatchClaimWithLocks(i, locks);
+            claimants[i] = bytes32(uint256(CLAIMANT) + i);
+            scalingFactors[i] = 1e18;
+        }
+
+        bytes memory payload = this.encodeBatchSendHelper(claimants, scalingFactors, claims);
+
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+
+        coreBridge().setNonce(1); // BATCH_SEND
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, realEmitterAddress, payload);
+
+        // Corrupt the signature
+        encodedVaa[10] = bytes1(uint8(encodedVaa[10]) ^ 0xFF);
+
+        // Should revert due to invalid signature
+        vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
+        WormholeArbiterBase.executeVAAv1(encodedVaa);
+    }
 }
