@@ -179,6 +179,15 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         );
     }
 
+    // Helper to call Message.encodeBatchPost with calldata
+    function encodeBatchPostHelper(
+        bytes32[] memory claimants,
+        bytes32[] memory claimHashes,
+        uint256[] memory scalingFactors
+    ) external pure returns (bytes memory) {
+        return Message.encodeBatchPost(claimants, claimHashes, scalingFactors);
+    }
+
     function setUp() public override {
         //set up the forks
         setUpFork(CHAIN_ID_ARBITRUM, vm.envString("ARBITRUM_RPC_URL"));
@@ -1453,5 +1462,66 @@ contract WormholeArbiterPostTest is WormholeForkTest {
                 claimHashes[i], allClaims[i], allLocks[i], expectedClaimants[i], expectedScalingFactors[i]
             );
         }
+    }
+
+    // test for post with invalid vaa signature
+    function test_post_invalid_vaa_signature() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+
+        coreBridge().setNonce(2); // SINGLE_POST
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, realEmitterAddress, payload);
+
+        // Corrupt the signature by flipping a byte in the signature area
+        // VAA structure: version(1) + guardianSetIndex(4) + sigCount(1) + signatures(66 each)
+        encodedVaa[10] = bytes1(uint8(encodedVaa[10]) ^ 0xFF);
+
+        // Should revert due to invalid signature
+        vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
+        WormholeArbiterBase.receivePost(encodedVaa);
+    }
+
+    // test for batch post with invalid vaa signature
+    function test_batch_post_invalid_vaa_signature() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create batch payload
+        uint256 numClaims = 2;
+        bytes32[] memory claimants = new bytes32[](numClaims);
+        bytes32[] memory claimHashes = new bytes32[](numClaims);
+        uint256[] memory scalingFactors = new uint256[](numClaims);
+
+        for (uint256 i = 0; i < numClaims; i++) {
+            claimants[i] = bytes32(uint256(CLAIMANT) + i);
+            claimHashes[i] = keccak256(abi.encodePacked("claim", i));
+            scalingFactors[i] = 1e18;
+        }
+
+        bytes memory payload = this.encodeBatchPostHelper(claimants, claimHashes, scalingFactors);
+
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+
+        coreBridge().setNonce(3); // BATCH_POST
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, realEmitterAddress, payload);
+
+        // Corrupt the signature
+        encodedVaa[10] = bytes1(uint8(encodedVaa[10]) ^ 0xFF);
+
+        // Should revert due to invalid signature
+        // Note: We don't need to provide valid claims since signature check happens first
+        BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](numClaims);
+        vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
+        WormholeArbiterBase.receiveBatchPost(encodedVaa, claims);
     }
 }
