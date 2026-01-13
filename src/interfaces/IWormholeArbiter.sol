@@ -150,9 +150,21 @@ interface IWormholeArbiter {
     /// @param encodedVaa The encoded Wormhole VAA fetched by the user
     function receivePost(bytes calldata encodedVaa) external;
 
-    /// @notice Batch receives multiple POST messages (NOT IMPLEMENTED)
-    /// @param encodedVAs Array of encoded Wormhole VAAs
-    function receivePosts(bytes[] calldata encodedVAs) external;
+    /// @notice Gas-efficient batch verification of multiple single-post VAAs
+    /// @dev This function optimizes guardian set lookups when processing multiple VAAs:
+    ///      - Fetches the guardian set once from the first VAA's guardianSetIndex
+    ///      - Reuses cached guardians for subsequent VAAs with the same guardianSetIndex
+    ///      - Only fetches a new guardian set when guardianSetIndex changes (rare)
+    ///
+    ///      This differs from receiveBatchPost which processes a SINGLE VAA containing
+    ///      multiple claim hashes (bitmap-compressed). Use receivePosts when you have
+    ///      multiple independent VAAs from separate post() calls that you want to
+    ///      submit together for gas savings.
+    ///
+    ///      Gas savings come from avoiding redundant guardian set storage reads (~2100 gas
+    ///      per additional VAA when guardian sets match).
+    /// @param encodedVaas Array of encoded Wormhole VAAs, each from a separate post()
+    function receivePosts(bytes[] calldata encodedVaas) external;
 
     /// @notice Receives and processes a batch POST message relayed by user via VAA
     /// @dev VAA contains only claim hashes + claimants + scaling factors (bitmap-compressed).

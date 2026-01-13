@@ -8,6 +8,8 @@ import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 import {IDispatchCallback} from "tribunal/interfaces/IDispatchCallback.sol";
 import {ExecutorSendReceive} from "./wormhole/WormholeExecutor.sol";
 import {CoreBridgeLib} from "wormhole-sdk/libraries/CoreBridge.sol";
+import {VaaLib} from "wormhole-sdk/libraries/VaaLib.sol";
+import {BytesParsing} from "wormhole-sdk/libraries/BytesParsing.sol";
 import {WormholeMappings} from "./wormhole/WormholeMappings.sol";
 import {Message} from "./libraries/Message.sol";
 import {
@@ -43,8 +45,9 @@ import {IWormholeArbiter} from "./interfaces/IWormholeArbiter.sol";
  *
  * ENTRY POINTS (Destination Chain - receiving claims):
  * - executeVAAv1                 Wormhole Executor calls (SEND mode) [in WormholeExecutor.sol]
- * - receivePost()                User calls with VAA (POST mode)
- * - receiveBatchPost()           User calls with VAA + claim data
+ * - receivePost()                User calls with single VAA (POST mode)
+ * - receivePosts()               Gas-efficient batch of multiple single-post VAAs
+ * - receiveBatchPost()           User calls with VAA + claim data (bitmap-compressed)
  *
  * HELPERS (for off-chain context construction):
  * - encodeSendContext()          Build context for SEND via Tribunal
@@ -52,6 +55,9 @@ import {IWormholeArbiter} from "./interfaces/IWormholeArbiter.sol";
  */
 
 contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArbiter, BaseArbiter {
+    using BytesParsing for bytes;
+    using VaaLib for bytes;
+
     // TODO: decide on consistency levels
     uint8 constant CONSISTENCY_LEVEL = 201; // safe for now. maybe custom in the future
     // TODO: decide on max message size
@@ -263,8 +269,36 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
     }
 
     /// @inheritdoc IWormholeArbiter
-    // TODO: Implement per the efficiency logic in lib/wormhole-solidity-sdk/src/libraries/CoreBridge.sol
-    function receivePosts(bytes[] calldata encodedVAs) external virtual {}
+    function receivePosts(bytes[] calldata encodedVaas) external virtual {
+        uint256 length = encodedVaas.length;
+        if (length == 0) return;
+
+        // Initialize to impossible value - forces guardian fetch on first iteration
+        uint32 cachedGuardianSetIndex = type(uint32).max;
+        address[] memory guardians;
+
+        for (uint256 i = 0; i < length;) {
+            bytes calldata encodedVaa = encodedVaas[i];
+
+            // Read guardianSetIndex from calldata
+            uint256 vaaOffset = VaaLib.checkVaaVersionCdUnchecked(VaaLib.VERSION_MULTISIG, encodedVaa);
+            (uint32 vaaGuardianSetIndex,) = encodedVaa.asUint32CdUnchecked(vaaOffset);
+
+            // Fetch guardians on first iteration or when guardianSetIndex changes
+            if (vaaGuardianSetIndex != cachedGuardianSetIndex) {
+                guardians = CoreBridgeLib.getGuardiansOrLatest(address(_coreBridge), vaaGuardianSetIndex);
+                cachedGuardianSetIndex = vaaGuardianSetIndex;
+            }
+
+            // Verify with cached guardians
+            bytes calldata payload = _verifyWithGuardians(encodedVaa, guardians, vaaOffset);
+            _sendClaim(Message.decode(payload));
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
 
     /// @inheritdoc IWormholeArbiter
     function receiveBatchPost(bytes calldata encodedVaa, BatchClaimWithLocks[] calldata claims) external virtual {
@@ -462,6 +496,69 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
         if (MessagePackingType(nonce) != expectedType) revert InvalidMessageType();
 
         return payload;
+    }
+
+    /// @dev Verifies a VAA using pre-fetched guardian addresses.
+    ///      This mirrors CoreBridgeLib.decodeAndVerifyVaaCd but with cached guardians.
+    /// @param encodedVaa The encoded VAA to verify
+    /// @param guardians Pre-fetched guardian addresses to verify against
+    /// @param offset Offset after version byte (from checkVaaVersionCdUnchecked)function _verifyWithGuardians(bytes calldata encodedVaa, address[] memory guardians, uint256 offset)
+        internal
+        view
+        returns (bytes calldata payload)
+    {
+        unchecked {
+            // Skip guardianSetIndex (4 bytes) - we already have the guardians
+            offset += 4;
+
+            uint256 guardianCount = guardians.length;
+            uint256 signatureCount;
+            (signatureCount, offset) = encodedVaa.asUint8CdUnchecked(offset);
+
+            // Quorum check: requires 2/3 + 1 guardians to sign
+            if (signatureCount < CoreBridgeLib.minSigsForQuorum(guardianCount)) {
+                revert CoreBridgeLib.VerificationFailed();
+            }
+
+            // Each signature is 66 bytes: guardianIndex (1) + r (32) + s (32) + v (1)
+            uint256 envelopeOffset = offset + signatureCount * VaaLib.MULTISIG_GUARDIAN_SIGNATURE_SIZE;
+            bytes32 vaaHash = encodedVaa.calcVaaDoubleHashCd(envelopeOffset);
+
+            uint256 prevGuardianIndex;
+            for (uint256 i = 0; i < signatureCount; ++i) {
+                uint256 guardianIndex;
+                bytes32 r;
+                bytes32 s;
+                uint8 v;
+                (guardianIndex, r, s, v, offset) = encodedVaa.decodeGuardianSignatureCdUnchecked(offset);
+
+                if (guardianIndex >= guardianCount) {
+                    revert CoreBridgeLib.VerificationFailed();
+                }
+
+                if (i != 0 && guardianIndex <= prevGuardianIndex) {
+                    revert CoreBridgeLib.VerificationFailed();
+                }
+
+                if (ecrecover(vaaHash, v, r, s) != guardians[guardianIndex]) {
+                    revert CoreBridgeLib.VerificationFailed();
+                }
+
+                prevGuardianIndex = guardianIndex;
+            }
+
+            uint32 nonce;
+            uint16 emitterChainId;
+            bytes32 emitterAddress;
+            (, nonce, emitterChainId, emitterAddress,,, payload) = encodedVaa.decodeVaaBodyCd(envelopeOffset);
+
+            WormholeMappings.validateChainId(emitterChainId);
+            _validateMessageSender(address(uint160(uint256(emitterAddress))));
+
+            if (MessagePackingType(nonce) != MessagePackingType.SINGLE_POST) {
+                revert InvalidMessageType();
+            }
+        }
     }
 
     /// @dev Transforms Lock[] into BatchClaimComponent[] with scaling factor applied
