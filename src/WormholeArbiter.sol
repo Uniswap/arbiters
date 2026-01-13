@@ -502,7 +502,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
     ///      This mirrors CoreBridgeLib.decodeAndVerifyVaaCd but with cached guardians.
     /// @param encodedVaa The encoded VAA to verify
     /// @param guardians Pre-fetched guardian addresses to verify against
-    /// @param offset Offset after version byte (from checkVaaVersionCdUnchecked)function _verifyWithGuardians(bytes calldata encodedVaa, address[] memory guardians, uint256 offset)
+    /// @param offset Offset after version byte (from checkVaaVersionCdUnchecked)
+    function _verifyWithGuardians(bytes calldata encodedVaa, address[] memory guardians, uint256 offset)
         internal
         view
         returns (bytes calldata payload)
