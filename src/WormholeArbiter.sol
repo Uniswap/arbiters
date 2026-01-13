@@ -263,6 +263,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
     }
 
     /// @inheritdoc IWormholeArbiter
+    // TODO: Implement per the efficiency logic in lib/wormhole-solidity-sdk/src/libraries/CoreBridge.sol
     function receivePosts(bytes[] calldata encodedVAs) external virtual {}
 
     /// @inheritdoc IWormholeArbiter
