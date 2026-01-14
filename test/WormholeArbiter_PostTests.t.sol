@@ -103,6 +103,84 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         );
     }
 
+    // Struct to hold all data for a single post claim (used in receivePosts tests)
+    struct PostClaimData {
+        address sponsor;
+        uint256 nonce;
+        uint256 expires;
+        bytes32 witness;
+        bytes32 claimant;
+        bytes allocatorData;
+        bytes sponsorSignature;
+        Lock[] locks;
+        bytes32 claimHash;
+        uint256 scalingFactor;
+    }
+
+    // Helper to generate varied claim data for receivePosts tests
+    function createPostClaimData(uint256 index) internal view returns (PostClaimData memory data) {
+        // Vary number of locks (1 to 5, cycling)
+        data.locks = createLocks((index % 5) + 1);
+
+        // Vary all claim parameters based on index
+        data.sponsor = address(uint160(SPONSOR) + uint160(index));
+        data.nonce = NONCE + index;
+        data.expires = EXPIRES + index;
+        data.witness = keccak256(abi.encodePacked("witness", index));
+        data.claimant = bytes32(uint256(CLAIMANT) + index);
+        data.allocatorData = abi.encodePacked(keccak256(abi.encodePacked("allocator", index)));
+        data.sponsorSignature = abi.encodePacked(keccak256(abi.encodePacked("sponsor_sig", index)));
+
+        // Derive claim hash
+        data.claimHash =
+            WormholeArbiterArbitrum.deriveClaimHash(data.sponsor, data.nonce, data.expires, data.witness, data.locks);
+
+        // Default scaling factor (100% - no reduction)
+        data.scalingFactor = 1e18;
+    }
+
+    // Helper to post a claim and return the encoded VAA (uses data.scalingFactor)
+    function postClaimAndGetVaa(PostClaimData memory data) internal returns (bytes memory encodedVaa) {
+        TribunalMockArbitrum.setFilled(data.claimHash, data.claimant);
+
+        if (data.scalingFactor != 1e18) {
+            // For cancellation (scalingFactor == 0), mock uses type(uint256).max
+            uint256 mockValue = data.scalingFactor == 0 ? type(uint256).max : data.scalingFactor;
+            TribunalMockArbitrum.setClaimReductionScalingFactor(data.claimHash, mockValue);
+        }
+
+        vm.prank(filler);
+        vm.recordLogs();
+        WormholeArbiterArbitrum.post(
+            BASE_CHAIN_ID_STANDARD,
+            data.sponsor,
+            data.nonce,
+            data.expires,
+            data.witness,
+            data.locks,
+            data.allocatorData,
+            data.sponsorSignature
+        );
+        return fetchEncodedVaa();
+    }
+
+    // Helper to verify a claim was processed correctly (uses data.scalingFactor)
+    function verifyClaimEquality(PostClaimData memory data) internal view {
+        assertTrue(compactMock.getClaimHash(data.claimHash));
+        assertClaimEquality(
+            compactMock.getReceivedClaim(data.claimHash),
+            data.sponsor,
+            data.nonce,
+            data.expires,
+            data.witness,
+            data.allocatorData,
+            data.sponsorSignature,
+            data.locks,
+            data.claimant,
+            data.scalingFactor
+        );
+    }
+
     // Helper function to verify BatchClaim matches expected input data
     function assertClaimEquality(
         BatchClaim memory receivedClaim,
@@ -1581,5 +1659,465 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](numClaims);
         vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
         WormholeArbiterBase.receiveBatchPost(encodedVaa, claims);
+    }
+
+    ///// receivePosts Tests /////
+
+    /// @notice Nominal end-to-end flow - batch of VAAs all successfully claimed
+    function test_receivePosts_batch_success() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei);
+
+        uint256 numClaims = 5;
+        PostClaimData[] memory claims = new PostClaimData[](numClaims);
+        bytes[] memory encodedVaas = new bytes[](numClaims);
+
+        // Create and post each claim with varied inputs
+        for (uint256 i = 0; i < numClaims; i++) {
+            claims[i] = createPostClaimData(i);
+            encodedVaas[i] = postClaimAndGetVaa(claims[i]);
+        }
+
+        // Switch to Base and verify none are claimed yet
+        selectFork(CHAIN_ID_BASE);
+        for (uint256 i = 0; i < numClaims; i++) {
+            assertFalse(compactMock.getClaimHash(claims[i].claimHash));
+        }
+
+        // Batch receive all posts
+        vm.prank(filler);
+        WormholeArbiterBase.receivePosts(encodedVaas);
+
+        // Verify all claims were processed and data matches
+        for (uint256 i = 0; i < numClaims; i++) {
+            verifyClaimEquality(claims[i]);
+        }
+    }
+
+    /// @notice Batch with varying scaling factors
+    function test_receivePosts_batch_with_scaling_factors() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei);
+
+        uint256 numClaims = 4;
+        PostClaimData[] memory claims = new PostClaimData[](numClaims);
+        bytes[] memory encodedVaas = new bytes[](numClaims);
+
+        // Vary scaling factors: full, half, quarter, cancelled
+        uint256[4] memory scalingFactors = [uint256(1e18), 0.5e18, 0.25e18, 0];
+
+        // Create and post each claim with different scaling factors
+        for (uint256 i = 0; i < numClaims; i++) {
+            claims[i] = createPostClaimData(i);
+            claims[i].scalingFactor = scalingFactors[i];
+            encodedVaas[i] = postClaimAndGetVaa(claims[i]);
+        }
+
+        // Switch to Base and verify none are claimed yet
+        selectFork(CHAIN_ID_BASE);
+        for (uint256 i = 0; i < numClaims; i++) {
+            assertFalse(compactMock.getClaimHash(claims[i].claimHash));
+        }
+
+        // Batch receive all posts
+        vm.prank(filler);
+        WormholeArbiterBase.receivePosts(encodedVaas);
+
+        // Verify all claims were processed with correct scaling factors
+        for (uint256 i = 0; i < numClaims; i++) {
+            verifyClaimEquality(claims[i]);
+        }
+    }
+
+    /// @notice Empty array returns without error
+    function test_receivePosts_empty_array() public {
+        selectFork(CHAIN_ID_BASE);
+
+        bytes[] memory emptyVaas = new bytes[](0);
+
+        // Expect zero calls to getGuardianSet (returns before any external calls)
+        uint32 guardianSetIndex = coreBridge().getCurrentGuardianSetIndex();
+        vm.expectCall(
+            address(coreBridge()),
+            abi.encodeCall(ICoreBridge.getGuardianSet, (guardianSetIndex)),
+            0 // exactly 0 calls
+        );
+
+        // Should not revert, just return early
+        WormholeArbiterBase.receivePosts(emptyVaas);
+    }
+
+    /// @notice Invalid VAA causes entire batch to revert
+    function test_receivePosts_invalid_vaa_reverts_batch() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei);
+
+        // Create 3 valid VAAs using helpers
+        uint256 numClaims = 3;
+        PostClaimData[] memory claims = new PostClaimData[](numClaims);
+        bytes[] memory encodedVaas = new bytes[](numClaims);
+
+        for (uint256 i = 0; i < numClaims; i++) {
+            claims[i] = createPostClaimData(i);
+            encodedVaas[i] = postClaimAndGetVaa(claims[i]);
+        }
+
+        // Corrupt the middle VAA's signature
+        encodedVaas[1][10] = bytes1(uint8(encodedVaas[1][10]) ^ 0xFF);
+
+        selectFork(CHAIN_ID_BASE);
+
+        // Should revert because one VAA has invalid signature
+        vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
+        WormholeArbiterBase.receivePosts(encodedVaas);
+    }
+
+    /// @notice Invalid emitter chain ID causes revert
+    function test_receivePosts_invalid_chain_id() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 emitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 invalidChainId = 99; // Unsupported chain
+
+        coreBridge().setNonce(2); // SINGLE_POST
+
+        bytes memory encodedVaa = coreBridge().craftVaa(invalidChainId, emitterAddress, payload);
+
+        bytes[] memory vaas = new bytes[](1);
+        vaas[0] = encodedVaa;
+
+        vm.expectRevert("Unsupported chain");
+        WormholeArbiterBase.receivePosts(vaas);
+    }
+
+    /// @notice Invalid emitter address causes revert
+    function test_receivePosts_invalid_emitter_address() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 fakeEmitterAddress = bytes32(uint256(0xdeadbeef));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+
+        coreBridge().setNonce(2); // SINGLE_POST
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, fakeEmitterAddress, payload);
+
+        bytes[] memory vaas = new bytes[](1);
+        vaas[0] = encodedVaa;
+
+        vm.expectRevert("Message not from corresponding arbiter");
+        WormholeArbiterBase.receivePosts(vaas);
+    }
+
+    /// @notice Invalid message type (nonce) causes revert
+    function test_receivePosts_invalid_nonce() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 emitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+
+        coreBridge().setNonce(0); // SINGLE_SEND instead of SINGLE_POST
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, emitterAddress, payload);
+
+        bytes[] memory vaas = new bytes[](1);
+        vaas[0] = encodedVaa;
+
+        vm.expectRevert(IWormholeArbiter.InvalidMessageType.selector);
+        WormholeArbiterBase.receivePosts(vaas);
+    }
+
+    /// @notice Signature count below quorum causes revert
+    function test_receivePosts_below_quorum() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create a valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 emitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+
+        coreBridge().setNonce(2); // SINGLE_POST
+
+        // Reduce signers below quorum (need 13 of 19, set to 5)
+        uint8[] memory fewSigners = new uint8[](5);
+        for (uint8 i = 0; i < 5; i++) {
+            fewSigners[i] = i;
+        }
+        coreBridge().setSigningIndices(fewSigners);
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, emitterAddress, payload);
+
+        bytes[] memory vaas = new bytes[](1);
+        vaas[0] = encodedVaa;
+
+        vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
+        WormholeArbiterBase.receivePosts(vaas);
+    }
+
+    /// @notice Guardian set caching - all same guardian set (1 call)
+    function test_receivePosts_caching_all_same_guardians() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei);
+
+        uint256 numClaims = 5;
+        PostClaimData[] memory claims = new PostClaimData[](numClaims);
+        bytes[] memory encodedVaas = new bytes[](numClaims);
+
+        // Create and post each claim using helpers
+        for (uint256 i = 0; i < numClaims; i++) {
+            claims[i] = createPostClaimData(i);
+            encodedVaas[i] = postClaimAndGetVaa(claims[i]);
+        }
+
+        // Switch to Base
+        selectFork(CHAIN_ID_BASE);
+
+        // Expect exactly 1 call to getGuardianSet with any parameter (caching should prevent additional calls)
+        vm.expectCall(
+            address(coreBridge()),
+            abi.encodeWithSelector(ICoreBridge.getGuardianSet.selector),
+            1 // exactly 1 call regardless of guardianSetIndex
+        );
+
+        // Batch receive all posts
+        vm.prank(filler);
+        WormholeArbiterBase.receivePosts(encodedVaas);
+
+        // Verify all claims were processed and data matches
+        for (uint256 i = 0; i < numClaims; i++) {
+            verifyClaimEquality(claims[i]);
+        }
+    }
+
+    /// @notice Single VAA matches receivePost behavior
+    function test_receivePosts_single_matches_receivePost() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei);
+
+        // Create single claim using helper
+        PostClaimData memory data = createPostClaimData(0);
+        bytes memory encodedVaa = postClaimAndGetVaa(data);
+
+        // Switch to Base
+        selectFork(CHAIN_ID_BASE);
+        assertFalse(compactMock.getClaimHash(data.claimHash));
+
+        // Use receivePosts with single-element array
+        bytes[] memory vaas = new bytes[](1);
+        vaas[0] = encodedVaa;
+
+        vm.prank(filler);
+        WormholeArbiterBase.receivePosts(vaas);
+
+        // Verify claim processed identically to receivePost
+        verifyClaimEquality(data);
+    }
+
+    /// @notice Guardian index out of bounds causes revert
+    function test_receivePosts_guardian_index_out_of_bounds() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 emitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+        coreBridge().setNonce(2); // SINGLE_POST
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, emitterAddress, payload);
+
+        // Corrupt first signature's guardianIndex to 99 (>= 19 guardians)
+        // First guardianIndex is at offset 6
+        encodedVaa[6] = bytes1(uint8(99));
+
+        bytes[] memory vaas = new bytes[](1);
+        vaas[0] = encodedVaa;
+
+        vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
+        WormholeArbiterBase.receivePosts(vaas);
+    }
+
+    /// @notice Non-ascending guardian indices causes revert
+    function test_receivePosts_non_ascending_indices() public {
+        selectFork(CHAIN_ID_BASE);
+
+        // Create valid payload
+        Lock[] memory locks = createLocks(1);
+        bytes memory payload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        bytes32 emitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
+        coreBridge().setNonce(2); // SINGLE_POST
+
+        bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, emitterAddress, payload);
+
+        // Swap guardian indices of first two signatures to create descending order
+        // Sig 1 guardianIndex at offset 6, Sig 2 guardianIndex at offset 6+66=72
+        bytes1 idx0 = encodedVaa[6];
+        bytes1 idx1 = encodedVaa[72];
+
+        // Make idx0 > idx1 (descending instead of ascending)
+        encodedVaa[6] = idx1;
+        encodedVaa[72] = idx0;
+
+        bytes[] memory vaas = new bytes[](1);
+        vaas[0] = encodedVaa;
+
+        vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
+        WormholeArbiterBase.receivePosts(vaas);
+    }
+
+    /// @notice Guardian set caching with one switch - expects 2 getGuardianSet calls
+    /// @dev Uses SDK's setUpOverride to create genuinely different guardian sets on both forks
+    function test_receivePosts_caching_one_switch() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei);
+
+        // --- Phase 1: Create VAAs with Guardian Set A (SDK default - 19 signers) ---
+        // setUpOverride already called in setUp(), so we have set A
+        uint32 indexA = coreBridge().getCurrentGuardianSetIndex();
+
+        PostClaimData[] memory claimsA = new PostClaimData[](2);
+        bytes[] memory vaasA = new bytes[](2);
+        for (uint256 i = 0; i < 2; i++) {
+            claimsA[i] = createPostClaimData(i);
+            vaasA[i] = postClaimAndGetVaa(claimsA[i]);
+        }
+
+        // --- Phase 2: Reset override and create Guardian Set B (5 different signers) ---
+        _resetGuardianOverride();
+        uint256[] memory keysB = _generateGuardianKeys("guardian_set_B", 5);
+        coreBridge().setUpOverride(keysB); // SDK creates set B at indexA+1
+        uint32 indexB = coreBridge().getCurrentGuardianSetIndex();
+
+        PostClaimData[] memory claimsB = new PostClaimData[](3);
+        bytes[] memory vaasB = new bytes[](3);
+        for (uint256 i = 0; i < 3; i++) {
+            claimsB[i] = createPostClaimData(i + 10);
+            vaasB[i] = postClaimAndGetVaa(claimsB[i]);
+        }
+
+        // --- Phase 3: On Base, use SDK to create same guardian sets at same indices ---
+        selectFork(CHAIN_ID_BASE);
+        // setUpOverride already called in setUp() for Base, creating set A at same index
+        _resetGuardianOverride();
+        coreBridge().setUpOverride(keysB); // Creates set B with same keys → same addresses
+
+        // --- Phase 4: Process all VAAs ---
+        bytes[] memory allVaas = new bytes[](5);
+        allVaas[0] = vaasA[0]; // Set A, signed by 19 guardians
+        allVaas[1] = vaasA[1]; // Set A
+        allVaas[2] = vaasB[0]; // Set B (switch!), signed by 5 different guardians
+        allVaas[3] = vaasB[1]; // Set B
+        allVaas[4] = vaasB[2]; // Set B
+
+        // Expect exactly 2 calls to getGuardianSet (caching prevents duplicates)
+        vm.expectCall(address(coreBridge()), abi.encodeCall(ICoreBridge.getGuardianSet, (indexA)), 1);
+        vm.expectCall(address(coreBridge()), abi.encodeCall(ICoreBridge.getGuardianSet, (indexB)), 1);
+
+        vm.prank(filler);
+        WormholeArbiterBase.receivePosts(allVaas);
+
+        for (uint256 i = 0; i < 2; i++) {
+            verifyClaimEquality(claimsA[i]);
+        }
+        for (uint256 i = 0; i < 3; i++) {
+            verifyClaimEquality(claimsB[i]);
+        }
+    }
+
+    /// @notice Guardian set caching with multiple switches - expects 4 getGuardianSet calls
+    /// @dev Interleaved pattern [A, B, A, B] forces re-fetching each time
+    function test_receivePosts_caching_multiple_switches() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        setMessageFee(0 gwei);
+
+        // --- Phase 1: Guardian Set A (SDK default) ---
+        uint32 indexA = coreBridge().getCurrentGuardianSetIndex();
+
+        PostClaimData memory claimA0 = createPostClaimData(0);
+        PostClaimData memory claimA1 = createPostClaimData(2);
+        bytes memory vaaA0 = postClaimAndGetVaa(claimA0);
+        bytes memory vaaA1 = postClaimAndGetVaa(claimA1);
+
+        // --- Phase 2: Guardian Set B (5 different signers) ---
+        _resetGuardianOverride();
+        uint256[] memory keysB = _generateGuardianKeys("guardian_set_B_multi", 5);
+        coreBridge().setUpOverride(keysB);
+        uint32 indexB = coreBridge().getCurrentGuardianSetIndex();
+
+        PostClaimData memory claimB0 = createPostClaimData(1);
+        PostClaimData memory claimB1 = createPostClaimData(3);
+        bytes memory vaaB0 = postClaimAndGetVaa(claimB0);
+        bytes memory vaaB1 = postClaimAndGetVaa(claimB1);
+
+        // --- Phase 3: On Base, use SDK to create same guardian sets ---
+        selectFork(CHAIN_ID_BASE);
+        // setUpOverride already called in setUp() for Base, creating set A at same index
+        _resetGuardianOverride();
+        coreBridge().setUpOverride(keysB); // Creates set B with same keys
+
+        // --- Phase 4: Process VAAs in interleaved order [A, B, A, B] ---
+        bytes[] memory allVaas = new bytes[](4);
+        allVaas[0] = vaaA0; // Index A
+        allVaas[1] = vaaB0; // Index B (switch)
+        allVaas[2] = vaaA1; // Index A (switch back)
+        allVaas[3] = vaaB1; // Index B (switch again)
+
+        // Expect 4 calls (2 to each index, no caching benefit due to interleaving)
+        vm.expectCall(address(coreBridge()), abi.encodeCall(ICoreBridge.getGuardianSet, (indexA)), 2);
+        vm.expectCall(address(coreBridge()), abi.encodeCall(ICoreBridge.getGuardianSet, (indexB)), 2);
+
+        vm.prank(filler);
+        WormholeArbiterBase.receivePosts(allVaas);
+
+        verifyClaimEquality(claimA0);
+        verifyClaimEquality(claimA1);
+        verifyClaimEquality(claimB0);
+        verifyClaimEquality(claimB1);
+    }
+
+    /// @dev Clears the guardian private keys array length to allow calling setUpOverride again
+    /// @notice This is the only vm.store needed - SDK has no reset function
+    function _resetGuardianOverride() internal {
+        // _OVERRIDE_STATE_SLOT + _OR_GUARDIANS_OFFSET (see WormholeOverride.sol lines 141, 155)
+        uint256 slot = 0x2e44eb2c79e88410071ac52f3c0e5ab51396d9208c2c783cdb8e12f39b763de8 + 3;
+        vm.store(address(coreBridge()), bytes32(slot), bytes32(0));
+    }
+
+    /// @dev Generates deterministic guardian private keys from a seed
+    /// @notice Keys are derived via keccak256(seed, index) - produces genuinely different signers
+    function _generateGuardianKeys(string memory seed, uint256 count) internal pure returns (uint256[] memory) {
+        uint256[] memory keys = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            keys[i] = uint256(keccak256(abi.encodePacked(seed, i)));
+        }
+        return keys;
     }
 }
