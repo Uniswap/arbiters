@@ -181,12 +181,14 @@ interface IWormholeArbiter {
     /// @param sponsorSignature Sponsor's signature authorizing the claim
     /// @param params Wormhole delivery parameters (gasLimit, totalCost)
     /// @param signedQuote Signed executor quote for delivery cost verification
+    /// @param refundAddress Address to receive excess ETH refunds from Wormhole Executor
     /// @return Encoded context bytes for dispatchCallback
     function encodeSendContext(
         bytes calldata allocatorData,
         bytes calldata sponsorSignature,
         WormholeParams memory params,
-        bytes calldata signedQuote
+        bytes calldata signedQuote,
+        address refundAddress
     ) external pure returns (bytes memory);
 
     /// @notice Encodes context data for POST operations via Tribunal dispatchCallback

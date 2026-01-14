@@ -13,9 +13,10 @@ contract MessageContextWrapper {
         bytes calldata allocatorData,
         bytes calldata sponsorSignature,
         WormholeParams memory params,
-        bytes calldata signedQuote
+        bytes calldata signedQuote,
+        address refundAddress
     ) external pure returns (bytes memory) {
-        return Message.encodeSendContext(allocatorData, sponsorSignature, params, signedQuote);
+        return Message.encodeSendContext(allocatorData, sponsorSignature, params, signedQuote, refundAddress);
     }
 
     function decodeSendContext(bytes calldata context)
@@ -25,7 +26,8 @@ contract MessageContextWrapper {
             bytes calldata allocatorData,
             bytes calldata sponsorSignature,
             WormholeParams memory params,
-            bytes calldata signedQuote
+            bytes calldata signedQuote,
+            address refundAddress
         )
     {
         return Message.decodeSendContext(context);
@@ -67,6 +69,9 @@ contract MessageContextTest is Test {
     // Mock signed quote
     bytes constant SIGNED_QUOTE = hex"aabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd";
 
+    // Mock refund address
+    address constant REFUND_ADDRESS = address(0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF);
+
     function createWormholeParams(uint128 gasLimit, uint256 totalCost) internal pure returns (WormholeParams memory) {
         return WormholeParams({gasLimit: gasLimit, totalCost: totalCost});
     }
@@ -90,7 +95,7 @@ contract MessageContextTest is Test {
 
         vm.expectRevert("allocator data too long");
         bytes memory tooLong = new bytes(65536);
-        wrapper.encodeSendContext(tooLong, hex"", params, SIGNED_QUOTE);
+        wrapper.encodeSendContext(tooLong, hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
     }
 
     /// @notice Test encodeSendContext reverts with sponsor signature exceeding uint16 max
@@ -99,102 +104,113 @@ contract MessageContextTest is Test {
 
         vm.expectRevert("sponsor signature too long");
         bytes memory tooLong = new bytes(65536);
-        wrapper.encodeSendContext(hex"", tooLong, params, SIGNED_QUOTE);
+        wrapper.encodeSendContext(hex"", tooLong, params, SIGNED_QUOTE, REFUND_ADDRESS);
     }
 
     /// @notice Test round trip with both signatures present
     function test_sendContext_roundTrip_bothSignatures() public view {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE);
+        bytes memory encoded =
+            wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE, REFUND_ADDRESS);
 
         (
             bytes memory decodedAllocator,
             bytes memory decodedSponsor,
             WormholeParams memory decodedParams,
-            bytes memory decodedQuote
+            bytes memory decodedQuote,
+            address decodedRefundAddress
         ) = wrapper.decodeSendContext(encoded);
 
         assertEq(keccak256(decodedAllocator), keccak256(ALLOCATOR_SIG), "allocator data mismatch");
         assertEq(keccak256(decodedSponsor), keccak256(SPONSOR_SIG), "sponsor signature mismatch");
         assertWormholeParamsEqual(params, decodedParams);
         assertEq(keccak256(decodedQuote), keccak256(SIGNED_QUOTE), "signed quote mismatch");
+        assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
     /// @notice Test round trip with zero signatures
     function test_sendContext_roundTrip_zeroSignatures() public view {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        bytes memory encoded = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE);
+        bytes memory encoded = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
 
         (
             bytes memory decodedAllocator,
             bytes memory decodedSponsor,
             WormholeParams memory decodedParams,
-            bytes memory decodedQuote
+            bytes memory decodedQuote,
+            address decodedRefundAddress
         ) = wrapper.decodeSendContext(encoded);
 
         assertEq(decodedAllocator.length, 0, "allocator data should be empty");
         assertEq(decodedSponsor.length, 0, "sponsor signature should be empty");
         assertWormholeParamsEqual(params, decodedParams);
         assertEq(keccak256(decodedQuote), keccak256(SIGNED_QUOTE), "signed quote mismatch");
+        assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
     /// @notice Test round trip with only allocator signature
     function test_sendContext_roundTrip_onlyAllocatorSignature() public view {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, SIGNED_QUOTE);
+        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
 
         (
             bytes memory decodedAllocator,
             bytes memory decodedSponsor,
             WormholeParams memory decodedParams,
-            bytes memory decodedQuote
+            bytes memory decodedQuote,
+            address decodedRefundAddress
         ) = wrapper.decodeSendContext(encoded);
 
         assertEq(keccak256(decodedAllocator), keccak256(ALLOCATOR_SIG), "allocator data mismatch");
         assertEq(decodedSponsor.length, 0, "sponsor signature should be empty");
         assertWormholeParamsEqual(params, decodedParams);
         assertEq(keccak256(decodedQuote), keccak256(SIGNED_QUOTE), "signed quote mismatch");
+        assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
     /// @notice Test round trip with only sponsor signature
     function test_sendContext_roundTrip_onlySponsorSignature() public view {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        bytes memory encoded = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, SIGNED_QUOTE);
+        bytes memory encoded = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, SIGNED_QUOTE, REFUND_ADDRESS);
 
         (
             bytes memory decodedAllocator,
             bytes memory decodedSponsor,
             WormholeParams memory decodedParams,
-            bytes memory decodedQuote
+            bytes memory decodedQuote,
+            address decodedRefundAddress
         ) = wrapper.decodeSendContext(encoded);
 
         assertEq(decodedAllocator.length, 0, "allocator data should be empty");
         assertEq(keccak256(decodedSponsor), keccak256(SPONSOR_SIG), "sponsor signature mismatch");
         assertWormholeParamsEqual(params, decodedParams);
         assertEq(keccak256(decodedQuote), keccak256(SIGNED_QUOTE), "signed quote mismatch");
+        assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
     /// @notice Test round trip with empty signed quote
     function test_sendContext_roundTrip_emptySignedQuote() public view {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, hex"");
+        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, hex"", REFUND_ADDRESS);
 
         (
             bytes memory decodedAllocator,
             bytes memory decodedSponsor,
             WormholeParams memory decodedParams,
-            bytes memory decodedQuote
+            bytes memory decodedQuote,
+            address decodedRefundAddress
         ) = wrapper.decodeSendContext(encoded);
 
         assertEq(keccak256(decodedAllocator), keccak256(ALLOCATOR_SIG), "allocator data mismatch");
         assertEq(keccak256(decodedSponsor), keccak256(SPONSOR_SIG), "sponsor signature mismatch");
         assertWormholeParamsEqual(params, decodedParams);
         assertEq(decodedQuote.length, 0, "signed quote should be empty");
+        assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
     /// @notice Test round trip with large signed quote
@@ -207,43 +223,48 @@ contract MessageContextTest is Test {
             largeQuote[i] = bytes1(uint8(i % 256));
         }
 
-        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, largeQuote);
+        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, largeQuote, REFUND_ADDRESS);
 
         (
             bytes memory decodedAllocator,
             bytes memory decodedSponsor,
             WormholeParams memory decodedParams,
-            bytes memory decodedQuote
+            bytes memory decodedQuote,
+            address decodedRefundAddress
         ) = wrapper.decodeSendContext(encoded);
 
         assertEq(keccak256(decodedAllocator), keccak256(ALLOCATOR_SIG), "allocator data mismatch");
         assertEq(keccak256(decodedSponsor), keccak256(SPONSOR_SIG), "sponsor signature mismatch");
         assertWormholeParamsEqual(params, decodedParams);
         assertEq(keccak256(decodedQuote), keccak256(largeQuote), "signed quote mismatch");
+        assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
     /// @notice Test round trip with extreme gas limit and total cost values
     function test_sendContext_roundTrip_extremeValues() public view {
         WormholeParams memory params = createWormholeParams(type(uint128).max, type(uint256).max);
 
-        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE);
+        bytes memory encoded =
+            wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE, REFUND_ADDRESS);
 
         (
             bytes memory decodedAllocator,
             bytes memory decodedSponsor,
             WormholeParams memory decodedParams,
-            bytes memory decodedQuote
+            bytes memory decodedQuote,
+            address decodedRefundAddress
         ) = wrapper.decodeSendContext(encoded);
 
         assertEq(keccak256(decodedAllocator), keccak256(ALLOCATOR_SIG), "allocator data mismatch");
         assertEq(keccak256(decodedSponsor), keccak256(SPONSOR_SIG), "sponsor signature mismatch");
         assertWormholeParamsEqual(params, decodedParams);
         assertEq(keccak256(decodedQuote), keccak256(SIGNED_QUOTE), "signed quote mismatch");
+        assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
-    /// @notice Test decodeSendContext reverts on context too short (minimum 49 bytes)
+    /// @notice Test decodeSendContext reverts on context too short (minimum 69 bytes)
     function test_decodeSendContext_revertsOnContextTooShort() public {
-        bytes memory tooShort = new bytes(48);
+        bytes memory tooShort = new bytes(68);
 
         vm.expectRevert("context too short");
         wrapper.decodeSendContext(tooShort);
@@ -256,7 +277,8 @@ contract MessageContextTest is Test {
         uint128 gasLimit,
         uint256 totalCost,
         uint16 quoteLength,
-        bytes32 randomSeed
+        bytes32 randomSeed,
+        address refundAddress
     ) public view {
         // Bound lengths to reasonable sizes for testing (0 to 2048 bytes)
         // Testing up to uint16.max would be too expensive for fuzzing
@@ -282,14 +304,15 @@ contract MessageContextTest is Test {
         WormholeParams memory params = createWormholeParams(gasLimit, totalCost);
 
         // Encode
-        bytes memory encoded = wrapper.encodeSendContext(allocatorData, sponsorSig, params, signedQuote);
+        bytes memory encoded = wrapper.encodeSendContext(allocatorData, sponsorSig, params, signedQuote, refundAddress);
 
         // Decode
         (
             bytes memory decodedAllocator,
             bytes memory decodedSponsor,
             WormholeParams memory decodedParams,
-            bytes memory decodedQuote
+            bytes memory decodedQuote,
+            address decodedRefundAddress
         ) = wrapper.decodeSendContext(encoded);
 
         // Assert all fields match
@@ -297,6 +320,7 @@ contract MessageContextTest is Test {
         assertEq(keccak256(decodedSponsor), keccak256(sponsorSig), "sponsor signature mismatch");
         assertWormholeParamsEqual(params, decodedParams);
         assertEq(keccak256(decodedQuote), keccak256(signedQuote), "signed quote mismatch");
+        assertEq(decodedRefundAddress, refundAddress, "refund address mismatch");
     }
 
     //////////////////////////////////////////////////////////////
@@ -419,7 +443,7 @@ contract MessageContextTest is Test {
     /// @notice Test that IS_SEND flag is set in send context encoding
     function test_sendContext_isSendFlagIsSet() public view {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
-        bytes memory encoded = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE);
+        bytes memory encoded = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
 
         // IS_SEND flag is 0x04
         uint8 flags = uint8(encoded[0]);
@@ -440,19 +464,20 @@ contract MessageContextTest is Test {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
         // No signatures: only IS_SEND (0x04)
-        bytes memory encoded1 = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE);
+        bytes memory encoded1 = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
         assertEq(uint8(encoded1[0]), 0x04, "flags should be 0x04 (IS_SEND only)");
 
         // Only allocator: HAS_ALLOCATOR_SIG (0x01) | IS_SEND (0x04) = 0x05
-        bytes memory encoded2 = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, SIGNED_QUOTE);
+        bytes memory encoded2 = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
         assertEq(uint8(encoded2[0]), 0x05, "flags should be 0x05");
 
         // Only sponsor: HAS_SPONSOR_SIG (0x02) | IS_SEND (0x04) = 0x06
-        bytes memory encoded3 = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, SIGNED_QUOTE);
+        bytes memory encoded3 = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, SIGNED_QUOTE, REFUND_ADDRESS);
         assertEq(uint8(encoded3[0]), 0x06, "flags should be 0x06");
 
         // Both signatures: HAS_ALLOCATOR_SIG (0x01) | HAS_SPONSOR_SIG (0x02) | IS_SEND (0x04) = 0x07
-        bytes memory encoded4 = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE);
+        bytes memory encoded4 =
+            wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE, REFUND_ADDRESS);
         assertEq(uint8(encoded4[0]), 0x07, "flags should be 0x07");
     }
 
@@ -483,25 +508,26 @@ contract MessageContextTest is Test {
     function test_sendContext_sizes() public view {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        // Minimum size: 1 (flags) + 16 (gasLimit) + 32 (totalCost) = 49 bytes (with empty quote)
-        bytes memory encoded1 = wrapper.encodeSendContext(hex"", hex"", params, hex"");
-        assertEq(encoded1.length, 49, "minimum size should be 49");
+        // Minimum size: 1 (flags) + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress) = 69 bytes (with empty quote)
+        bytes memory encoded1 = wrapper.encodeSendContext(hex"", hex"", params, hex"", REFUND_ADDRESS);
+        assertEq(encoded1.length, 69, "minimum size should be 69");
 
-        // With allocator: 49 + 2 (length prefix) + 64 (data) = 115
-        bytes memory encoded2 = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, hex"");
-        assertEq(encoded2.length, 115, "with allocator should be 115");
+        // With allocator: 69 + 2 (length prefix) + 64 (data) = 135
+        bytes memory encoded2 = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, hex"", REFUND_ADDRESS);
+        assertEq(encoded2.length, 135, "with allocator should be 135");
 
-        // With sponsor: 49 + 2 (length prefix) + 64 (data) = 115
-        bytes memory encoded3 = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, hex"");
-        assertEq(encoded3.length, 115, "with sponsor should be 115");
+        // With sponsor: 69 + 2 (length prefix) + 64 (data) = 135
+        bytes memory encoded3 = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, hex"", REFUND_ADDRESS);
+        assertEq(encoded3.length, 135, "with sponsor should be 135");
 
-        // With both: 49 + 2 + 64 + 2 + 64 = 181
-        bytes memory encoded4 = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, hex"");
-        assertEq(encoded4.length, 181, "with both should be 181");
+        // With both: 69 + 2 + 64 + 2 + 64 = 201
+        bytes memory encoded4 = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, hex"", REFUND_ADDRESS);
+        assertEq(encoded4.length, 201, "with both should be 201");
 
-        // With both + 32-byte quote: 181 + 32 = 213
-        bytes memory encoded5 = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE);
-        assertEq(encoded5.length, 213, "with both + quote should be 213");
+        // With both + 32-byte quote: 201 + 32 = 233
+        bytes memory encoded5 =
+            wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE, REFUND_ADDRESS);
+        assertEq(encoded5.length, 233, "with both + quote should be 233");
     }
 
     /// @notice Test post context encoding produces expected sizes

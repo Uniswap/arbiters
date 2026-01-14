@@ -357,7 +357,11 @@ contract WormholeArbiterTest is ExecutorTest {
 
         //encode send context
         bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
-            ALLOCATOR_DATA, SPONSOR_SIGNATURE, WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}), quote
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
+            quote,
+            filler
         );
 
         // filler sends the claim (TODO: check for expected emits)
@@ -666,7 +670,11 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // encode send context with total cost including message fee
         bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
-            ALLOCATOR_DATA, SPONSOR_SIGNATURE, WormholeParams({totalCost: totalCost, gasLimit: GAS_LIMIT}), quote
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: totalCost, gasLimit: GAS_LIMIT}),
+            quote,
+            filler
         );
 
         // filler sends the claim via tribunal
@@ -910,7 +918,11 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // encode send context
         bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
-            ALLOCATOR_DATA, SPONSOR_SIGNATURE, WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}), quote
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
+            quote,
+            filler
         );
 
         // filler sends the claim via tribunal with scaling factor
@@ -1153,7 +1165,11 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // encode send context
         bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
-            ALLOCATOR_DATA, SPONSOR_SIGNATURE, WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}), quote
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
+            quote,
+            filler
         );
 
         // filler sends the claim via tribunal with 0 scaling factor (cancelled)
@@ -1456,6 +1472,84 @@ contract WormholeArbiterTest is ExecutorTest {
         WormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
     }
 
+    // check to make sure requestExecution is called with the correct refundAddress when using dispatchCallback
+    // This verifies that the refundAddress from context (not msg.sender/Tribunal) is passed to the executor
+    function test_dispatch_callback_request_execution_uses_context_refund_address() public {
+        selectFork(CHAIN_ID_ARBITRUM);
+        uint256 testMessageFee = 0.01 gwei;
+        setMessageFee(testMessageFee);
+
+        address refundRecipient = makeAddr("refundRecipient");
+
+        // Create single lock + batch compact + get claim hash + set in mock tribunal
+        Lock[] memory locks = createLocks(1);
+        BatchCompact memory compact = BatchCompact({
+            arbiter: address(WormholeArbiterArbitrum),
+            sponsor: SPONSOR,
+            nonce: NONCE,
+            expires: EXPIRES,
+            commitments: locks
+        });
+        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+
+        // Get contract addresses from WormholeMappings
+        address coreBridge = WormholeMappings.getWormhole(block.chainid);
+        address executor = WormholeMappings.getWormholeExecutor(block.chainid);
+
+        // Pre-compute expected values
+        bytes32 peerAddress = bytes32(uint256(uint160(address(WormholeArbiterArbitrum))));
+        uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(block.chainid); // 23
+        uint16 wormholeBaseChainId = WormholeMappings.toWormholeId(BASE_CHAIN_ID_STANDARD); // 30
+        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(WormholeArbiterArbitrum));
+
+        // Expected payload from Message.encode
+        bytes memory expectedPayload = this.encodeMessageHelper(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
+        );
+
+        // Expected relay instructions
+        bytes memory expectedRelayInstructions = RelayInstructionLib.encodeGas(GAS_LIMIT, 0);
+
+        // Expected request
+        bytes memory expectedRequest =
+            RequestLib.encodeVaaMultiSigRequest(wormholeArbitrumChainId, peerAddress, expectedSequence);
+
+        // Set up vm.expectCall for coreBridge.publishMessage
+        uint8 CONSISTENCY_LEVEL = 201;
+        uint32 expectedNonce = 0; // MessagePackingType.SINGLE_SEND
+        vm.expectCall(
+            coreBridge,
+            testMessageFee,
+            abi.encodeCall(ICoreBridge.publishMessage, (expectedNonce, expectedPayload, CONSISTENCY_LEVEL))
+        );
+
+        // Verify requestExecution is called with refundRecipient (from context), NOT filler/msg.sender
+        vm.expectCall(
+            executor,
+            quoteCost - testMessageFee,
+            abi.encodeCall(
+                IExecutor.requestExecution,
+                (wormholeBaseChainId, peerAddress, refundRecipient, quote, expectedRequest, expectedRelayInstructions)
+            )
+        );
+
+        // Encode send context with refundRecipient as the refundAddress (different from filler who calls)
+        bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
+            quote,
+            refundRecipient
+        );
+
+        // Execute via TribunalMock.dispatchCallback (msg.sender to arbiter will be Tribunal, not filler)
+        vm.prank(filler);
+        TribunalMockArbitrum.dispatchCallback{
+            value: quoteCost
+        }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context);
+    }
+
     // test for dispatch with invalid arbiter
     function test_send_dispatch_invalid_arbiter() public {
         selectFork(CHAIN_ID_ARBITRUM);
@@ -1469,7 +1563,11 @@ contract WormholeArbiterTest is ExecutorTest {
         bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
-            ALLOCATOR_DATA, SPONSOR_SIGNATURE, WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}), quote
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
+            quote,
+            filler
         );
 
         // Call arbiter directly, pranking as TRIBUNAL_ADDRESS to pass UnauthorizedCaller check
@@ -1529,7 +1627,11 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // SEND context - should emit SingleSendEvent
         bytes memory sendContext = WormholeArbiterArbitrum.encodeSendContext(
-            ALLOCATOR_DATA, SPONSOR_SIGNATURE, WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}), quote
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
+            quote,
+            filler
         );
 
         vm.expectEmit(true, true, false, false); // check chainId + claimHash, skip sequence
@@ -1581,7 +1683,11 @@ contract WormholeArbiterTest is ExecutorTest {
         bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
-            ALLOCATOR_DATA, SPONSOR_SIGNATURE, WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}), quote
+            ALLOCATOR_DATA,
+            SPONSOR_SIGNATURE,
+            WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
+            quote,
+            filler
         );
 
         // Call from a random address (not Tribunal) - should revert with UnauthorizedCaller

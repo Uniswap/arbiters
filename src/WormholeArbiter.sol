@@ -99,9 +99,11 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
         if ((flags & Message.IS_SEND) != 0) {
             WormholeParams memory wormholeParams;
             bytes calldata signedQuote;
+            address refundAddress;
 
             // TODO: try to get rid of wormhole params assignment here. did this for now because of stack too deep error.
-            (allocatorData, sponsorSignature, wormholeParams, signedQuote) = Message.decodeSendContext(context);
+            (allocatorData, sponsorSignature, wormholeParams, signedQuote, refundAddress) =
+                Message.decodeSendContext(context);
 
             bytes memory message = Message.encode(
                 compact.sponsor,
@@ -121,7 +123,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
                 chainId,
                 signedQuote,
                 wormholeParams.gasLimit,
-                uint32(MessagePackingType.SINGLE_SEND)
+                uint32(MessagePackingType.SINGLE_SEND),
+                refundAddress
             );
 
             emit SingleSendEvent(chainId, claimHash, sequence);
@@ -177,7 +180,13 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
         );
 
         sequence = _sendMessage(
-            message, params.totalCost, chainId, signedQuote, params.gasLimit, uint32(MessagePackingType.SINGLE_SEND)
+            message,
+            params.totalCost,
+            chainId,
+            signedQuote,
+            params.gasLimit,
+            uint32(MessagePackingType.SINGLE_SEND),
+            msg.sender
         );
 
         emit SingleSendEvent(chainId, claimHash, sequence);
@@ -332,9 +341,10 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
         bytes calldata allocatorData,
         bytes calldata sponsorSignature,
         WormholeParams memory params,
-        bytes calldata signedQuote
+        bytes calldata signedQuote,
+        address refundAddress
     ) external pure returns (bytes memory) {
-        return Message.encodeSendContext(allocatorData, sponsorSignature, params, signedQuote);
+        return Message.encodeSendContext(allocatorData, sponsorSignature, params, signedQuote, refundAddress);
     }
 
     /// @inheritdoc IWormholeArbiter
@@ -348,21 +358,22 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
 
     // ======== Internal Functions ========
 
-    /// @dev Wraps _publishAndRelay with CONSISTENCY_LEVEL and refund to msg.sender
+    /// @dev Wraps _publishAndRelay with CONSISTENCY_LEVEL and specified refund address
     function _sendMessage(
         bytes memory payload,
         uint256 totalCost,
         uint256 chainId,
         bytes calldata signedQuote,
         uint128 gasLimit,
-        uint32 nonce
+        uint32 nonce,
+        address refundAddress
     ) internal returns (uint64 sequence) {
         sequence = _publishAndRelay(
             payload,
             CONSISTENCY_LEVEL,
             totalCost,
             WormholeMappings.toWormholeId(chainId),
-            msg.sender, // TODO: change send context to include refund address
+            refundAddress,
             signedQuote,
             gasLimit,
             0,
@@ -399,7 +410,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
             batch.chainId,
             batch.signedQuote,
             batch.gasLimit,
-            uint32(MessagePackingType.BATCH_SEND)
+            uint32(MessagePackingType.BATCH_SEND),
+            msg.sender
         );
 
         emit BatchSendEvent(batch.chainId, claimHashes, sequence);

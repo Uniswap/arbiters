@@ -35,19 +35,21 @@ library Message {
 
     /**
      * @notice Encodes send context for BATCH_SEND operations
-     * @dev Format: [flags(1)][allocatorDataLength(2)][allocatorData(variable)][sponsorSigLength(2)][sponsorSig(variable)][gasLimit(16)][totalCost(32)][signedQuote(variable)]
+     * @dev Format: [flags(1)][allocatorDataLength(2)][allocatorData(variable)][sponsorSigLength(2)][sponsorSig(variable)][gasLimit(16)][totalCost(32)][refundAddress(20)][signedQuote(variable)]
      * @dev Length prefixes are uint16, allowing signatures from 0 to 65,535 bytes
      * @param allocatorData Allocator signature (0 to 65,535 bytes)
      * @param sponsorSignature Sponsor signature (0 to 65,535 bytes)
      * @param params Wormhole parameters (gasLimit, totalCost)
      * @param signedQuote Signed quote from relayer (variable length)
+     * @param refundAddress Address to receive excess ETH refunds from Wormhole Executor
      * @return Encoded context bytes
      */
     function encodeSendContext(
         bytes calldata allocatorData,
         bytes calldata sponsorSignature,
         WormholeParams memory params,
-        bytes calldata signedQuote
+        bytes calldata signedQuote,
+        address refundAddress
     ) internal pure returns (bytes memory) {
         uint8 flags;
         if (allocatorData.length > 0) {
@@ -61,11 +63,11 @@ library Message {
         // TODO: add signed quote length requirements here per logic in executor
         flags |= IS_SEND;
 
-        // Calculate total size: 1 (flags) + allocatorData + sponsorSignature + 16 (gasLimit) + 32 (totalCost) + signedQuote.length
+        // Calculate total size: 1 (flags) + allocatorData + sponsorSignature + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress) + signedQuote.length
         // Each signature includes 2-byte length prefix when present
         uint256 allocatorSize = allocatorData.length > 0 ? allocatorData.length + 2 : 0;
         uint256 sponsorSize = sponsorSignature.length > 0 ? sponsorSignature.length + 2 : 0;
-        uint256 totalSize = 1 + allocatorSize + sponsorSize + 16 + 32 + signedQuote.length;
+        uint256 totalSize = 1 + allocatorSize + sponsorSize + 16 + 32 + 20 + signedQuote.length;
         bytes memory result = new bytes(totalSize);
 
         assembly ("memory-safe") {
@@ -103,6 +105,11 @@ library Message {
             mstore(ptr, totalCost)
             ptr := add(ptr, 32)
 
+            // Store refundAddress (20 bytes)
+            // TODO: possibly add tx.orgin for flag with no refund address
+            mstore(ptr, shl(96, refundAddress))
+            ptr := add(ptr, 20)
+
             // Copy signedQuote (variable length)
             calldatacopy(ptr, signedQuote.offset, signedQuote.length)
         }
@@ -118,6 +125,7 @@ library Message {
      * @return sponsorSignature Sponsor signature (0 to 65,535 bytes)
      * @return params Wormhole parameters (gasLimit, totalCost)
      * @return signedQuote Signed quote from relayer
+     * @return refundAddress Address to receive excess ETH refunds from Wormhole Executor
      */
     function decodeSendContext(bytes calldata context)
         internal
@@ -126,10 +134,11 @@ library Message {
             bytes calldata allocatorData,
             bytes calldata sponsorSignature,
             WormholeParams memory params,
-            bytes calldata signedQuote
+            bytes calldata signedQuote,
+            address refundAddress
         )
     {
-        require(context.length >= 49, "context too short"); // Minimum: 1 (flags) + 16 (gasLimit) + 32 (totalCost)
+        require(context.length >= 69, "context too short"); // Minimum: 1 (flags) + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress)
 
         uint8 flags;
         assembly ("memory-safe") {
@@ -168,17 +177,18 @@ library Message {
             sponsorSignature = context[0:0];
         }
 
-        // Read gasLimit (16 bytes) and totalCost (32 bytes) into params
-        require(context.length >= offset + 48, "context too short for gasLimit and totalCost");
+        // Read gasLimit (16 bytes), totalCost (32 bytes), and refundAddress (20 bytes)
+        require(context.length >= offset + 68, "context too short for gasLimit, totalCost, and refundAddress");
         assembly ("memory-safe") {
             let gasLimit := shr(128, calldataload(add(context.offset, offset)))
             let totalCost := calldataload(add(context.offset, add(offset, 16)))
+            refundAddress := shr(96, calldataload(add(context.offset, add(offset, 48))))
 
             // Store in params struct
             mstore(params, gasLimit)
             mstore(add(params, 32), totalCost)
         }
-        offset += 48;
+        offset += 68;
 
         // Read signedQuote (remaining bytes)
         // TODO: add a minimum length check for signed quote here per logic in https://github.com/wormholelabs-xyz/example-messaging-executor/blob/main/evm/src/Executor.sol
