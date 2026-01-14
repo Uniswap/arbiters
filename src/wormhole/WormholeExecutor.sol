@@ -11,7 +11,6 @@ import {IExecutor, IVaaV1Receiver} from "wormhole-sdk/interfaces/IExecutor.sol";
 import {CoreBridgeLib} from "wormhole-sdk/libraries/CoreBridge.sol";
 import {RequestLib} from "wormhole-sdk/Executor/Request.sol";
 import {RelayInstructionLib} from "wormhole-sdk/Executor/RelayInstruction.sol";
-import {toUniversalAddress} from "wormhole-sdk/Utils.sol";
 
 //abstract base contracts for typical Executor integrations
 //integrators should inherit from exactly one of:

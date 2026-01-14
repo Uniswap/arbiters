@@ -4,7 +4,6 @@ import {Vm} from "forge-std/Vm.sol";
 import {MockTheCompact} from "test/mocks/MockTheCompact.sol";
 import {TribunalMock} from "test/mocks/TribunalMock.sol";
 import {WormholeArbiter} from "src/WormholeArbiter.sol";
-import {BaseArbiter} from "src/abstracts/BaseArbiter.sol";
 import {BatchClaimWithLocks, BatchPost} from "src/wormhole/WormholeTypes.sol";
 
 import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";

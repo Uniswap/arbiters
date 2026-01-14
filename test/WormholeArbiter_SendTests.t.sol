@@ -4,7 +4,6 @@ import {MockTheCompact} from "test/mocks/MockTheCompact.sol";
 import {TribunalMock} from "test/mocks/TribunalMock.sol";
 import {WormholeArbiter} from "src/WormholeArbiter.sol";
 import {IWormholeArbiter} from "src/interfaces/IWormholeArbiter.sol";
-import {BaseArbiter} from "src/abstracts/BaseArbiter.sol";
 import {QuoteLib} from "lib/wormhole-solidity-sdk/src/testing/ExecutorTest.sol";
 import {WormholeParams, BatchSend, BatchClaimWithLocks} from "src/wormhole/WormholeTypes.sol";
 import {BatchClaim} from "the-compact/src/types/BatchClaims.sol";
