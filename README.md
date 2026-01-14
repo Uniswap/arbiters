@@ -49,13 +49,14 @@ The system is deterministically deployed at the same address across all supporte
 |----------|-------------|
 | `executeVAAv1()` | Receives automatic SEND deliveries via Wormhole Executor |
 | `receivePost()` | Receives self-relayed single POST messages |
+| `receivePosts()` | Receives multiple single POST VAAs with guardian set caching |
 | `receiveBatchPost()` | Receives self-relayed batch POST messages |
 
 ### Relay Mechanisms
 
 **SEND** uses the Wormhole Executor framework for automatic delivery. Messages are relayed by Wormhole's relayer network with upfront payment for destination gas.
 
-**POST** is self-relayed. Messages publish to Wormhole Core, then fillers fetch the VAA and submit to the destination chain. Lower cost but requires manual relay.
+**POST** is self-relayed. Messages publish to Wormhole Core, then fillers fetch the VAA and submit to the destination chain. Lower cost but requires manual relay. For multiple independent single-post VAAs, `receivePosts()` provides gas savings by caching guardian sets across VAAs.
 
 Both support batching (single chain or multichain) for gas optimization.
 
@@ -96,5 +97,4 @@ The arbiter validates fills with Tribunal before transmission:
 forge build      # Build contracts
 forge test       # Run tests
 forge fmt        # Format code
-forge snapshot   # Gas snapshots
 ```
