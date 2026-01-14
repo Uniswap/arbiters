@@ -270,14 +270,13 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
 
     /// @inheritdoc IWormholeArbiter
     function receivePosts(bytes[] calldata encodedVaas) external virtual {
-        uint256 length = encodedVaas.length;
-        if (length == 0) return;
+        if (encodedVaas.length == 0) return;
 
         // Initialize to impossible value - forces guardian fetch on first iteration
         uint32 cachedGuardianSetIndex = type(uint32).max;
         address[] memory guardians;
 
-        for (uint256 i = 0; i < length;) {
+        for (uint256 i = 0; i < encodedVaas.length; ++i) {
             bytes calldata encodedVaa = encodedVaas[i];
 
             // Read guardianSetIndex from calldata
@@ -293,10 +292,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
             // Verify with cached guardians
             bytes calldata payload = _verifyWithGuardians(encodedVaa, guardians, vaaOffset);
             _sendClaim(Message.decode(payload));
-
-            unchecked {
-                ++i;
-            }
         }
     }
 
@@ -533,6 +528,7 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
                 uint8 v;
                 (guardianIndex, r, s, v, offset) = encodedVaa.decodeGuardianSignatureCdUnchecked(offset);
 
+                // TODO: optimizing with eagerOr pattern (see CoreBridgeLib._failsVerification)
                 if (guardianIndex >= guardianCount) {
                     revert CoreBridgeLib.VerificationFailed();
                 }
