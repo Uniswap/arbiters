@@ -57,7 +57,7 @@ contract BaseArbiterTest is Test {
     MockTheCompact public compactMock;
 
     address constant THE_COMPACT_ADDRESS = 0x00000000000000171ede64904551eeDF3C6C9788;
-    address public TRIBUNAL_ADDRESS;
+    address public tribunalAddress;
 
     // Test constants
     address constant SPONSOR = 0x1111111111111111111111111111111111111111;
@@ -67,14 +67,14 @@ contract BaseArbiterTest is Test {
     bytes32 constant CLAIMANT = 0x9999999999999999999999999999999999999999999999999999999999999999;
 
     function setUp() public {
-        // Deploy the testable arbiter first to get TRIBUNAL_ADDRESS
+        // Deploy the testable arbiter first to get tribunalAddress
         arbiter = new TestableBaseArbiter();
-        TRIBUNAL_ADDRESS = arbiter.TRIBUNAL_ADDRESS();
+        tribunalAddress = arbiter.TRIBUNAL_ADDRESS();
 
         // Deploy TribunalMock and etch it to the expected address
         TribunalMock mockTribunal = new TribunalMock();
-        vm.etch(TRIBUNAL_ADDRESS, address(mockTribunal).code);
-        tribunalMock = TribunalMock(TRIBUNAL_ADDRESS);
+        vm.etch(tribunalAddress, address(mockTribunal).code);
+        tribunalMock = TribunalMock(tribunalAddress);
 
         // Deploy MockTheCompact and etch it to the expected address
         MockTheCompact mockCompact = new MockTheCompact();
@@ -161,7 +161,7 @@ contract BaseArbiterTest is Test {
 
     // Test 2: Tribunal is set correctly
     function test_tribunalIsSet() public view {
-        assertEq(address(arbiter.TRIBUNAL()), TRIBUNAL_ADDRESS);
+        assertEq(address(arbiter.TRIBUNAL()), tribunalAddress);
     }
 
     // Test 3: Base scaling factor is set correctly

@@ -7,7 +7,7 @@ import {IWormholeArbiter} from "src/interfaces/IWormholeArbiter.sol";
 import {QuoteLib} from "lib/wormhole-solidity-sdk/src/testing/ExecutorTest.sol";
 import {WormholeParams, BatchSend, BatchClaimWithLocks} from "src/wormhole/WormholeTypes.sol";
 import {BatchClaim} from "the-compact/src/types/BatchClaims.sol";
-import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
+import {BatchClaimComponent} from "the-compact/src/types/Components.sol";
 import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
 import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 import {ExecutorTest} from "wormhole-solidity-sdk/testing/ExecutorTest.sol";
@@ -31,11 +31,11 @@ contract WormholeArbiterTest is ExecutorTest {
     /* forge-lint-disable mixed-case-variable */
     using AdvancedWormholeOverride for ICoreBridge;
 
-    WormholeArbiter public WormholeArbiterArbitrum;
-    WormholeArbiter public WormholeArbiterBase;
+    WormholeArbiter public wormholeArbiterArbitrum;
+    WormholeArbiter public wormholeArbiterBase;
 
-    TribunalMock public TribunalMockArbitrum;
-    TribunalMock public TribunalMockBase;
+    TribunalMock public tribunalMockArbitrum;
+    TribunalMock public tribunalMockBase;
 
     MockTheCompact public compactMock;
     address constant THE_COMPACT_ADDRESS = 0x00000000000000171ede64904551eeDF3C6C9788; //compact address to etch to
@@ -233,11 +233,12 @@ contract WormholeArbiterTest is ExecutorTest {
         vm.deal(filler, 5 ether);
 
         // deploy wormhole arbiter + etch tribunal with TribunalMock on Arb
-        WormholeArbiterArbitrum = new WormholeArbiter{salt: salt}();
-        address TRIBUNAL_ADDRESS = WormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        wormholeArbiterArbitrum = new WormholeArbiter{salt: salt}();
+        // forge-lint: disable-next-line(mixed-case-variable)
+        address TRIBUNAL_ADDRESS = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
         TribunalMock arbitrumTribunalMock = new TribunalMock();
         vm.etch(TRIBUNAL_ADDRESS, address(arbitrumTribunalMock).code);
-        TribunalMockArbitrum = TribunalMock(TRIBUNAL_ADDRESS);
+        tribunalMockArbitrum = TribunalMock(TRIBUNAL_ADDRESS);
 
         // get quote cost (throwaway gas price for now)
         (quote, quoteCost) = craftSignedQuote(CHAIN_ID_BASE, GAS_LIMIT);
@@ -245,10 +246,10 @@ contract WormholeArbiterTest is ExecutorTest {
         selectFork(CHAIN_ID_BASE);
 
         // deploy wormhole arbiter + etch tribunal with TribunalMock
-        WormholeArbiterBase = new WormholeArbiter{salt: salt}();
+        wormholeArbiterBase = new WormholeArbiter{salt: salt}();
         TribunalMock baseTribunalMock = new TribunalMock();
         vm.etch(TRIBUNAL_ADDRESS, address(baseTribunalMock).code);
-        TribunalMockBase = TribunalMock(TRIBUNAL_ADDRESS);
+        tribunalMockBase = TribunalMock(TRIBUNAL_ADDRESS);
 
         // deploy the compact mock
         MockTheCompact deployedCompactMock = new MockTheCompact();
@@ -259,12 +260,12 @@ contract WormholeArbiterTest is ExecutorTest {
 
     function test_deployments_success() public {
         // Tribunals deployed to same address on both forks
-        assertEq(address(TribunalMockArbitrum), address(TribunalMockBase));
-        assertTrue(address(TribunalMockArbitrum) != address(0));
+        assertEq(address(tribunalMockArbitrum), address(tribunalMockBase));
+        assertTrue(address(tribunalMockArbitrum) != address(0));
 
         // Arbiters deployed to same address on both forks
-        assertEq(address(WormholeArbiterArbitrum), address(WormholeArbiterBase));
-        assertTrue(address(WormholeArbiterArbitrum) != address(0));
+        assertEq(address(wormholeArbiterArbitrum), address(wormholeArbiterBase));
+        assertTrue(address(wormholeArbiterArbitrum) != address(0));
 
         // Compact mock etched to correct address
         assertEq(address(compactMock), THE_COMPACT_ADDRESS);
@@ -283,13 +284,13 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // create single lock + get claim hash + set in mock tribunal
         Lock[] memory locks = createLocks(1);
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // filler sends the claim (TODO: check for expected emits)
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.send{
+        wormholeArbiterArbitrum.send{
             value: quoteCost
         }(
             BASE_CHAIN_ID_STANDARD,
@@ -312,7 +313,7 @@ contract WormholeArbiterTest is ExecutorTest {
         assertFalse(compactMock.getClaimHash(claimHash));
 
         // Set expectation for 1 call to arbiter
-        vm.expectCall(address(WormholeArbiterBase), abi.encodeWithSignature("executeVAAv1(bytes)"), 1);
+        vm.expectCall(address(wormholeArbiterBase), abi.encodeWithSignature("executeVAAv1(bytes)"), 1);
 
         // Switch back to arbitrum to execute the relay
         selectFork(CHAIN_ID_ARBITRUM);
@@ -345,17 +346,17 @@ contract WormholeArbiterTest is ExecutorTest {
         // create single lock + batch compact + get claim hash + set in mock tribunal
         Lock[] memory locks = createLocks(1);
         BatchCompact memory compact = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE,
             expires: EXPIRES,
             commitments: locks
         });
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         //encode send context
-        bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
+        bytes memory context = wormholeArbiterArbitrum.encodeSendContext(
             ALLOCATOR_DATA,
             SPONSOR_SIGNATURE,
             WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
@@ -366,7 +367,7 @@ contract WormholeArbiterTest is ExecutorTest {
         // filler sends the claim (TODO: check for expected emits)
         vm.prank(filler);
         vm.recordLogs();
-        TribunalMockArbitrum.dispatchCallback{
+        tribunalMockArbitrum.dispatchCallback{
             value: quoteCost
         }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context);
 
@@ -378,7 +379,7 @@ contract WormholeArbiterTest is ExecutorTest {
         assertFalse(compactMock.getClaimHash(claimHash));
 
         // Set expectation for 1 call to arbiter
-        vm.expectCall(address(WormholeArbiterBase), abi.encodeWithSignature("executeVAAv1(bytes)"), 1);
+        vm.expectCall(address(wormholeArbiterBase), abi.encodeWithSignature("executeVAAv1(bytes)"), 1);
 
         // Switch back to arbitrum to execute the relay
         selectFork(CHAIN_ID_ARBITRUM);
@@ -431,10 +432,10 @@ contract WormholeArbiterTest is ExecutorTest {
         bytes memory sponsorSignature2 = abi.encodePacked(keccak256("sponsor_signature_2"));
 
         // derive claim hashes + set in mock tribunal
-        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(sponsor1, nonce1, expires1, witness1, locks1);
-        TribunalMockArbitrum.setFilled(claimHash1, claimant1);
-        bytes32 claimHash2 = WormholeArbiterArbitrum.deriveClaimHash(sponsor2, nonce2, expires2, witness2, locks2);
-        TribunalMockArbitrum.setFilled(claimHash2, claimant2);
+        bytes32 claimHash1 = wormholeArbiterArbitrum.deriveClaimHash(sponsor1, nonce1, expires1, witness1, locks1);
+        tribunalMockArbitrum.setFilled(claimHash1, claimant1);
+        bytes32 claimHash2 = wormholeArbiterArbitrum.deriveClaimHash(sponsor2, nonce2, expires2, witness2, locks2);
+        tribunalMockArbitrum.setFilled(claimHash2, claimant2);
 
         // construct BatchClaimWithLocks array
         BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](2);
@@ -467,7 +468,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
+        wormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
 
         // check filler balance
         assertEq(address(filler).balance, 5 ether - uint256(quoteCost));
@@ -478,7 +479,7 @@ contract WormholeArbiterTest is ExecutorTest {
         assertFalse(compactMock.getClaimHash(claimHash2));
 
         // execute relay
-        vm.expectCall(address(WormholeArbiterBase), abi.encodeWithSignature("executeVAAv1(bytes)"), 1);
+        vm.expectCall(address(wormholeArbiterBase), abi.encodeWithSignature("executeVAAv1(bytes)"), 1);
         selectFork(CHAIN_ID_ARBITRUM);
         executeRelay();
 
@@ -529,11 +530,11 @@ contract WormholeArbiterTest is ExecutorTest {
         for (uint256 i = 0; i < 4; i++) {
             allLocks[i] = createLocks(i + 1);
             allClaims[i] = createBatchClaimWithLocks(i, allLocks[i]);
-            claimHashes[i] = WormholeArbiterArbitrum.deriveClaimHash(
+            claimHashes[i] = wormholeArbiterArbitrum.deriveClaimHash(
                 allClaims[i].sponsor, allClaims[i].nonce, allClaims[i].expires, allClaims[i].witness, allLocks[i]
             );
             claimants[i] = bytes32(uint256(CLAIMANT) + i);
-            TribunalMockArbitrum.setFilled(claimHashes[i], claimants[i]);
+            tribunalMockArbitrum.setFilled(claimHashes[i], claimants[i]);
         }
 
         // construct batches (2 claims each)
@@ -563,7 +564,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
+        wormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
 
         // check filler balance (2x quote cost)
         assertEq(address(filler).balance, 5 ether - uint256(quoteCost * 2));
@@ -576,7 +577,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // execute relay (2 calls to arbiter, one per batch)
         uint256 initialCallCount = compactMock.getCallCount();
-        vm.expectCall(address(WormholeArbiterBase), abi.encodeWithSignature("executeVAAv1(bytes)"), 2);
+        vm.expectCall(address(wormholeArbiterBase), abi.encodeWithSignature("executeVAAv1(bytes)"), 2);
         selectFork(CHAIN_ID_ARBITRUM);
         executeRelay();
 
@@ -599,13 +600,13 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // create single lock + get claim hash + set in mock tribunal
         Lock[] memory locks = createLocks(1);
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // filler sends the claim
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.send{
+        wormholeArbiterArbitrum.send{
             value: totalCost
         }(
             BASE_CHAIN_ID_STANDARD,
@@ -658,17 +659,17 @@ contract WormholeArbiterTest is ExecutorTest {
         // create single lock + batch compact + get claim hash + set in mock tribunal
         Lock[] memory locks = createLocks(1);
         BatchCompact memory compact = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE,
             expires: EXPIRES,
             commitments: locks
         });
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // encode send context with total cost including message fee
-        bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
+        bytes memory context = wormholeArbiterArbitrum.encodeSendContext(
             ALLOCATOR_DATA,
             SPONSOR_SIGNATURE,
             WormholeParams({totalCost: totalCost, gasLimit: GAS_LIMIT}),
@@ -679,7 +680,7 @@ contract WormholeArbiterTest is ExecutorTest {
         // filler sends the claim via tribunal
         vm.prank(filler);
         vm.recordLogs();
-        TribunalMockArbitrum.dispatchCallback{
+        tribunalMockArbitrum.dispatchCallback{
             value: totalCost
         }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context);
 
@@ -725,14 +726,14 @@ contract WormholeArbiterTest is ExecutorTest {
         BatchClaimWithLocks memory claim2 = createBatchClaimWithLocks(1, locks2);
 
         // derive claim hashes + set in mock tribunal
-        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(
+        bytes32 claimHash1 = wormholeArbiterArbitrum.deriveClaimHash(
             claim1.sponsor, claim1.nonce, claim1.expires, claim1.witness, locks1
         );
-        bytes32 claimHash2 = WormholeArbiterArbitrum.deriveClaimHash(
+        bytes32 claimHash2 = wormholeArbiterArbitrum.deriveClaimHash(
             claim2.sponsor, claim2.nonce, claim2.expires, claim2.witness, locks2
         );
-        TribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
-        TribunalMockArbitrum.setFilled(claimHash2, bytes32(uint256(CLAIMANT) + 1));
+        tribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
+        tribunalMockArbitrum.setFilled(claimHash2, bytes32(uint256(CLAIMANT) + 1));
 
         // construct and send batch
         BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](2);
@@ -748,7 +749,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.batchSend{value: totalCost}(batch);
+        wormholeArbiterArbitrum.batchSend{value: totalCost}(batch);
 
         // check filler balance decremented by total cost (quote + message fee)
         assertEq(address(filler).balance, 5 ether - totalCost);
@@ -785,10 +786,10 @@ contract WormholeArbiterTest is ExecutorTest {
         for (uint256 i = 0; i < 4; i++) {
             allLocks[i] = createLocks(i + 1);
             allClaims[i] = createBatchClaimWithLocks(i, allLocks[i]);
-            claimHashes[i] = WormholeArbiterArbitrum.deriveClaimHash(
+            claimHashes[i] = wormholeArbiterArbitrum.deriveClaimHash(
                 allClaims[i].sponsor, allClaims[i].nonce, allClaims[i].expires, allClaims[i].witness, allLocks[i]
             );
-            TribunalMockArbitrum.setFilled(claimHashes[i], bytes32(uint256(CLAIMANT) + i));
+            tribunalMockArbitrum.setFilled(claimHashes[i], bytes32(uint256(CLAIMANT) + i));
         }
 
         // construct batches (2 claims each)
@@ -818,7 +819,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.multichainBatchSend{value: totalCostPerBatch * 2}(batches);
+        wormholeArbiterArbitrum.multichainBatchSend{value: totalCostPerBatch * 2}(batches);
 
         // check filler balance decremented by total cost (2 batches × (quote + message fee))
         assertEq(address(filler).balance, 5 ether - (totalCostPerBatch * 2));
@@ -849,14 +850,14 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // create single lock + get claim hash + set in mock tribunal with scaling factor
         Lock[] memory locks = createLocks(1);
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
-        TribunalMockArbitrum.setClaimReductionScalingFactor(claimHash, scalingFactor);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        tribunalMockArbitrum.setClaimReductionScalingFactor(claimHash, scalingFactor);
 
         // filler sends the claim
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.send{
+        wormholeArbiterArbitrum.send{
             value: quoteCost
         }(
             BASE_CHAIN_ID_STANDARD,
@@ -906,17 +907,17 @@ contract WormholeArbiterTest is ExecutorTest {
         // create single lock + batch compact + get claim hash + set in mock tribunal
         Lock[] memory locks = createLocks(1);
         BatchCompact memory compact = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE,
             expires: EXPIRES,
             commitments: locks
         });
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // encode send context
-        bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
+        bytes memory context = wormholeArbiterArbitrum.encodeSendContext(
             ALLOCATOR_DATA,
             SPONSOR_SIGNATURE,
             WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
@@ -927,7 +928,7 @@ contract WormholeArbiterTest is ExecutorTest {
         // filler sends the claim via tribunal with scaling factor
         vm.prank(filler);
         vm.recordLogs();
-        TribunalMockArbitrum.dispatchCallback{
+        tribunalMockArbitrum.dispatchCallback{
             value: quoteCost
         }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, scalingFactor, new uint256[](0), context);
 
@@ -971,16 +972,16 @@ contract WormholeArbiterTest is ExecutorTest {
         BatchClaimWithLocks memory claim2 = createBatchClaimWithLocks(1, locks2);
 
         // derive claim hashes + set in mock tribunal with different scaling factors
-        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(
+        bytes32 claimHash1 = wormholeArbiterArbitrum.deriveClaimHash(
             claim1.sponsor, claim1.nonce, claim1.expires, claim1.witness, locks1
         );
-        bytes32 claimHash2 = WormholeArbiterArbitrum.deriveClaimHash(
+        bytes32 claimHash2 = wormholeArbiterArbitrum.deriveClaimHash(
             claim2.sponsor, claim2.nonce, claim2.expires, claim2.witness, locks2
         );
-        TribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
-        TribunalMockArbitrum.setFilled(claimHash2, bytes32(uint256(CLAIMANT) + 1));
-        TribunalMockArbitrum.setClaimReductionScalingFactor(claimHash1, scalingFactor1);
-        TribunalMockArbitrum.setClaimReductionScalingFactor(claimHash2, scalingFactor2);
+        tribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
+        tribunalMockArbitrum.setFilled(claimHash2, bytes32(uint256(CLAIMANT) + 1));
+        tribunalMockArbitrum.setClaimReductionScalingFactor(claimHash1, scalingFactor1);
+        tribunalMockArbitrum.setClaimReductionScalingFactor(claimHash2, scalingFactor2);
 
         // construct and send batch
         BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](2);
@@ -996,7 +997,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
+        wormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
 
         // verify claim hashes not set yet on base
         selectFork(CHAIN_ID_BASE);
@@ -1036,11 +1037,11 @@ contract WormholeArbiterTest is ExecutorTest {
         for (uint256 i = 0; i < 4; i++) {
             allLocks[i] = createLocks(i + 1);
             allClaims[i] = createBatchClaimWithLocks(i, allLocks[i]);
-            claimHashes[i] = WormholeArbiterArbitrum.deriveClaimHash(
+            claimHashes[i] = wormholeArbiterArbitrum.deriveClaimHash(
                 allClaims[i].sponsor, allClaims[i].nonce, allClaims[i].expires, allClaims[i].witness, allLocks[i]
             );
-            TribunalMockArbitrum.setFilled(claimHashes[i], bytes32(uint256(CLAIMANT) + i));
-            TribunalMockArbitrum.setClaimReductionScalingFactor(claimHashes[i], scalingFactors[i]);
+            tribunalMockArbitrum.setFilled(claimHashes[i], bytes32(uint256(CLAIMANT) + i));
+            tribunalMockArbitrum.setClaimReductionScalingFactor(claimHashes[i], scalingFactors[i]);
         }
 
         // construct batches (2 claims each)
@@ -1070,7 +1071,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
+        wormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
 
         // verify claim hashes not set yet on base
         selectFork(CHAIN_ID_BASE);
@@ -1100,14 +1101,14 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // create single lock + get claim hash + set in mock tribunal with 0 scaling factor
         Lock[] memory locks = createLocks(1);
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
-        TribunalMockArbitrum.setClaimReductionScalingFactor(claimHash, type(uint256).max); // max = cancelled = returns 0
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        tribunalMockArbitrum.setClaimReductionScalingFactor(claimHash, type(uint256).max); // max = cancelled = returns 0
 
         // filler sends the claim
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.send{
+        wormholeArbiterArbitrum.send{
             value: quoteCost
         }(
             BASE_CHAIN_ID_STANDARD,
@@ -1153,17 +1154,17 @@ contract WormholeArbiterTest is ExecutorTest {
         // create single lock + batch compact + get claim hash + set in mock tribunal
         Lock[] memory locks = createLocks(1);
         BatchCompact memory compact = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE,
             expires: EXPIRES,
             commitments: locks
         });
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // encode send context
-        bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
+        bytes memory context = wormholeArbiterArbitrum.encodeSendContext(
             ALLOCATOR_DATA,
             SPONSOR_SIGNATURE,
             WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
@@ -1174,7 +1175,7 @@ contract WormholeArbiterTest is ExecutorTest {
         // filler sends the claim via tribunal with 0 scaling factor (cancelled)
         vm.prank(filler);
         vm.recordLogs();
-        TribunalMockArbitrum.dispatchCallback{
+        tribunalMockArbitrum.dispatchCallback{
             value: quoteCost
         }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, scalingFactor, new uint256[](0), context);
 
@@ -1213,16 +1214,16 @@ contract WormholeArbiterTest is ExecutorTest {
         BatchClaimWithLocks memory claim2 = createBatchClaimWithLocks(1, locks2);
 
         // derive claim hashes + set in mock tribunal with 0 scaling factor (cancelled)
-        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(
+        bytes32 claimHash1 = wormholeArbiterArbitrum.deriveClaimHash(
             claim1.sponsor, claim1.nonce, claim1.expires, claim1.witness, locks1
         );
-        bytes32 claimHash2 = WormholeArbiterArbitrum.deriveClaimHash(
+        bytes32 claimHash2 = wormholeArbiterArbitrum.deriveClaimHash(
             claim2.sponsor, claim2.nonce, claim2.expires, claim2.witness, locks2
         );
-        TribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
-        TribunalMockArbitrum.setFilled(claimHash2, bytes32(uint256(CLAIMANT) + 1));
-        TribunalMockArbitrum.setClaimReductionScalingFactor(claimHash1, type(uint256).max);
-        TribunalMockArbitrum.setClaimReductionScalingFactor(claimHash2, type(uint256).max);
+        tribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
+        tribunalMockArbitrum.setFilled(claimHash2, bytes32(uint256(CLAIMANT) + 1));
+        tribunalMockArbitrum.setClaimReductionScalingFactor(claimHash1, type(uint256).max);
+        tribunalMockArbitrum.setClaimReductionScalingFactor(claimHash2, type(uint256).max);
 
         // construct and send batch
         BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](2);
@@ -1238,7 +1239,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
+        wormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
 
         // execute relay
         selectFork(CHAIN_ID_BASE);
@@ -1268,11 +1269,11 @@ contract WormholeArbiterTest is ExecutorTest {
         for (uint256 i = 0; i < 4; i++) {
             allLocks[i] = createLocks(i + 1);
             allClaims[i] = createBatchClaimWithLocks(i, allLocks[i]);
-            claimHashes[i] = WormholeArbiterArbitrum.deriveClaimHash(
+            claimHashes[i] = wormholeArbiterArbitrum.deriveClaimHash(
                 allClaims[i].sponsor, allClaims[i].nonce, allClaims[i].expires, allClaims[i].witness, allLocks[i]
             );
-            TribunalMockArbitrum.setFilled(claimHashes[i], bytes32(uint256(CLAIMANT) + i));
-            TribunalMockArbitrum.setClaimReductionScalingFactor(claimHashes[i], type(uint256).max);
+            tribunalMockArbitrum.setFilled(claimHashes[i], bytes32(uint256(CLAIMANT) + i));
+            tribunalMockArbitrum.setClaimReductionScalingFactor(claimHashes[i], type(uint256).max);
         }
 
         // construct batches (2 claims each)
@@ -1302,7 +1303,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
         vm.prank(filler);
         vm.recordLogs();
-        WormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
+        wormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
 
         // execute relay
         selectFork(CHAIN_ID_BASE);
@@ -1330,18 +1331,18 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Create single lock + get claim hash + set in mock tribunal
         Lock[] memory locks = createLocks(1);
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // Get contract addresses from WormholeMappings
         address coreBridge = WormholeMappings.getWormhole(block.chainid);
         address executor = WormholeMappings.getWormholeExecutor(block.chainid);
 
         // Pre-compute expected values
-        bytes32 peerAddress = bytes32(uint256(uint160(address(WormholeArbiterArbitrum))));
+        bytes32 peerAddress = bytes32(uint256(uint160(address(wormholeArbiterArbitrum))));
         uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(block.chainid); // 23
         uint16 wormholeBaseChainId = WormholeMappings.toWormholeId(BASE_CHAIN_ID_STANDARD); // 30
-        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(WormholeArbiterArbitrum));
+        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(wormholeArbiterArbitrum));
 
         // Expected payload from Message.encode
         bytes memory expectedPayload = this.encodeMessageHelper(
@@ -1357,6 +1358,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Set up vm.expectCall for coreBridge.publishMessage
         // Signature: publishMessage(uint32 nonce, bytes memory payload, uint8 consistencyLevel)
+        // forge-lint: disable-next-line(mixed-case-variable)
         uint8 CONSISTENCY_LEVEL = 201;
         uint32 expectedNonce = 0; // MessagePackingType.SINGLE_SEND
         vm.expectCall(
@@ -1378,7 +1380,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Execute send as filler
         vm.prank(filler);
-        WormholeArbiterArbitrum.send{
+        wormholeArbiterArbitrum.send{
             value: quoteCost
         }(
             BASE_CHAIN_ID_STANDARD,
@@ -1410,12 +1412,12 @@ contract WormholeArbiterTest is ExecutorTest {
         for (uint256 i = 0; i < numClaims; i++) {
             Lock[] memory locks = createLocks(i + 1); // 1, 2, 3 locks respectively
             claims[i] = createBatchClaimWithLocks(i, locks);
-            claimHashes[i] = WormholeArbiterArbitrum.deriveClaimHash(
+            claimHashes[i] = wormholeArbiterArbitrum.deriveClaimHash(
                 claims[i].sponsor, claims[i].nonce, claims[i].expires, claims[i].witness, locks
             );
             claimants[i] = bytes32(uint256(CLAIMANT) + i);
             scalingFactors[i] = 1e18; // full claim
-            TribunalMockArbitrum.setFilled(claimHashes[i], claimants[i]);
+            tribunalMockArbitrum.setFilled(claimHashes[i], claimants[i]);
         }
 
         // Get contract addresses from WormholeMappings
@@ -1423,10 +1425,10 @@ contract WormholeArbiterTest is ExecutorTest {
         address executor = WormholeMappings.getWormholeExecutor(block.chainid);
 
         // Pre-compute expected values
-        bytes32 peerAddress = bytes32(uint256(uint160(address(WormholeArbiterArbitrum))));
+        bytes32 peerAddress = bytes32(uint256(uint160(address(wormholeArbiterArbitrum))));
         uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(block.chainid); // 23
         uint16 wormholeBaseChainId = WormholeMappings.toWormholeId(BASE_CHAIN_ID_STANDARD); // 30
-        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(WormholeArbiterArbitrum));
+        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(wormholeArbiterArbitrum));
 
         // Expected payload from Message.encodeBatchSend
         bytes memory expectedPayload = this.encodeBatchSendHelper(claimants, scalingFactors, claims);
@@ -1439,6 +1441,7 @@ contract WormholeArbiterTest is ExecutorTest {
             RequestLib.encodeVaaMultiSigRequest(wormholeArbitrumChainId, peerAddress, expectedSequence);
 
         // Set up vm.expectCall for coreBridge.publishMessage
+        // forge-lint: disable-next-line(mixed-case-variable)
         uint8 CONSISTENCY_LEVEL = 201;
         uint32 expectedNonce = 1; // MessagePackingType.BATCH_SEND
         vm.expectCall(
@@ -1468,7 +1471,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Execute batchSend as filler
         vm.prank(filler);
-        WormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
+        wormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
     }
 
     // check to make sure requestExecution is called with the correct refundAddress when using dispatchCallback
@@ -1483,24 +1486,24 @@ contract WormholeArbiterTest is ExecutorTest {
         // Create single lock + batch compact + get claim hash + set in mock tribunal
         Lock[] memory locks = createLocks(1);
         BatchCompact memory compact = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE,
             expires: EXPIRES,
             commitments: locks
         });
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // Get contract addresses from WormholeMappings
         address coreBridge = WormholeMappings.getWormhole(block.chainid);
         address executor = WormholeMappings.getWormholeExecutor(block.chainid);
 
         // Pre-compute expected values
-        bytes32 peerAddress = bytes32(uint256(uint160(address(WormholeArbiterArbitrum))));
+        bytes32 peerAddress = bytes32(uint256(uint160(address(wormholeArbiterArbitrum))));
         uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(block.chainid); // 23
         uint16 wormholeBaseChainId = WormholeMappings.toWormholeId(BASE_CHAIN_ID_STANDARD); // 30
-        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(WormholeArbiterArbitrum));
+        uint64 expectedSequence = ICoreBridge(coreBridge).nextSequence(address(wormholeArbiterArbitrum));
 
         // Expected payload from Message.encode
         bytes memory expectedPayload = this.encodeMessageHelper(
@@ -1515,6 +1518,7 @@ contract WormholeArbiterTest is ExecutorTest {
             RequestLib.encodeVaaMultiSigRequest(wormholeArbitrumChainId, peerAddress, expectedSequence);
 
         // Set up vm.expectCall for coreBridge.publishMessage
+        // forge-lint: disable-next-line(mixed-case-variable)
         uint8 CONSISTENCY_LEVEL = 201;
         uint32 expectedNonce = 0; // MessagePackingType.SINGLE_SEND
         vm.expectCall(
@@ -1534,7 +1538,7 @@ contract WormholeArbiterTest is ExecutorTest {
         );
 
         // Encode send context with refundRecipient as the refundAddress (different from filler who calls)
-        bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
+        bytes memory context = wormholeArbiterArbitrum.encodeSendContext(
             ALLOCATOR_DATA,
             SPONSOR_SIGNATURE,
             WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
@@ -1544,7 +1548,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Execute via TribunalMock.dispatchCallback (msg.sender to arbiter will be Tribunal, not filler)
         vm.prank(filler);
-        TribunalMockArbitrum.dispatchCallback{
+        tribunalMockArbitrum.dispatchCallback{
             value: quoteCost
         }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context);
     }
@@ -1555,13 +1559,13 @@ contract WormholeArbiterTest is ExecutorTest {
         setMessageFee(0 gwei);
 
         Lock[] memory locks = createLocks(1);
-        // Set arbiter to a random address instead of WormholeArbiterArbitrum
+        // Set arbiter to a random address instead of wormholeArbiterArbitrum
         BatchCompact memory compact = BatchCompact({
             arbiter: address(0xdead), sponsor: SPONSOR, nonce: NONCE, expires: EXPIRES, commitments: locks
         });
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
-        bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
+        bytes memory context = wormholeArbiterArbitrum.encodeSendContext(
             ALLOCATOR_DATA,
             SPONSOR_SIGNATURE,
             WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
@@ -1571,11 +1575,11 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Call arbiter directly, pranking as TRIBUNAL_ADDRESS to pass UnauthorizedCaller check
         // Should revert with InvalidArbiter because compact.arbiter != address(WormholeArbiter)
-        address tribunalAddr = WormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        address tribunalAddr = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
         vm.deal(tribunalAddr, quoteCost);
         vm.prank(tribunalAddr);
         vm.expectRevert(IWormholeArbiter.InvalidArbiter.selector);
-        WormholeArbiterArbitrum.dispatchCallback{
+        wormholeArbiterArbitrum.dispatchCallback{
             value: quoteCost
         }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context);
     }
@@ -1587,22 +1591,22 @@ contract WormholeArbiterTest is ExecutorTest {
 
         Lock[] memory locks = createLocks(1);
         BatchCompact memory compact = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE,
             expires: EXPIRES,
             commitments: locks
         });
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         // Empty context should revert with ContextTooShort
         bytes memory context = "";
 
-        address tribunalAddr = WormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        address tribunalAddr = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
         vm.deal(tribunalAddr, quoteCost);
         vm.prank(tribunalAddr);
         vm.expectRevert(IWormholeArbiter.ContextTooShort.selector);
-        WormholeArbiterArbitrum.dispatchCallback{
+        wormholeArbiterArbitrum.dispatchCallback{
             value: quoteCost
         }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context);
     }
@@ -1615,17 +1619,17 @@ contract WormholeArbiterTest is ExecutorTest {
         // Setup for SEND path
         Lock[] memory locks1 = createLocks(1);
         BatchCompact memory compact1 = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE,
             expires: EXPIRES,
             commitments: locks1
         });
-        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks1);
-        TribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
+        bytes32 claimHash1 = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks1);
+        tribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
 
         // SEND context - should emit SingleSendEvent
-        bytes memory sendContext = WormholeArbiterArbitrum.encodeSendContext(
+        bytes memory sendContext = wormholeArbiterArbitrum.encodeSendContext(
             ALLOCATOR_DATA,
             SPONSOR_SIGNATURE,
             WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
@@ -1637,31 +1641,31 @@ contract WormholeArbiterTest is ExecutorTest {
         emit IWormholeArbiter.SingleSendEvent(BASE_CHAIN_ID_STANDARD, claimHash1, 0);
 
         vm.prank(filler);
-        TribunalMockArbitrum.dispatchCallback{
+        tribunalMockArbitrum.dispatchCallback{
             value: quoteCost
         }(BASE_CHAIN_ID_STANDARD, compact1, WITNESS, claimHash1, CLAIMANT, 1e18, new uint256[](0), sendContext);
 
         // Setup for POST path - use different nonce to avoid collision
         Lock[] memory locks2 = createLocks(1);
         BatchCompact memory compact2 = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE + 1,
             expires: EXPIRES,
             commitments: locks2
         });
-        bytes32 claimHash2 = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE + 1, EXPIRES, WITNESS, locks2);
-        TribunalMockArbitrum.setFilled(claimHash2, CLAIMANT);
+        bytes32 claimHash2 = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE + 1, EXPIRES, WITNESS, locks2);
+        tribunalMockArbitrum.setFilled(claimHash2, CLAIMANT);
 
         // POST context - should emit SinglePostEvent
-        bytes memory postContext = WormholeArbiterArbitrum.encodePostContext(ALLOCATOR_DATA, SPONSOR_SIGNATURE);
+        bytes memory postContext = wormholeArbiterArbitrum.encodePostContext(ALLOCATOR_DATA, SPONSOR_SIGNATURE);
 
         // POST only needs message fee (which is 0 in this test)
         vm.expectEmit(true, true, false, false); // check chainId + claimHash, skip sequence
         emit IWormholeArbiter.SinglePostEvent(BASE_CHAIN_ID_STANDARD, claimHash2, 0);
 
         vm.prank(filler);
-        TribunalMockArbitrum.dispatchCallback{
+        tribunalMockArbitrum.dispatchCallback{
             value: 0
         }(BASE_CHAIN_ID_STANDARD, compact2, WITNESS, claimHash2, CLAIMANT, 1e18, new uint256[](0), postContext);
     }
@@ -1673,15 +1677,15 @@ contract WormholeArbiterTest is ExecutorTest {
 
         Lock[] memory locks = createLocks(1);
         BatchCompact memory compact = BatchCompact({
-            arbiter: address(WormholeArbiterArbitrum),
+            arbiter: address(wormholeArbiterArbitrum),
             sponsor: SPONSOR,
             nonce: NONCE,
             expires: EXPIRES,
             commitments: locks
         });
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
-        bytes memory context = WormholeArbiterArbitrum.encodeSendContext(
+        bytes memory context = wormholeArbiterArbitrum.encodeSendContext(
             ALLOCATOR_DATA,
             SPONSOR_SIGNATURE,
             WormholeParams({totalCost: quoteCost, gasLimit: GAS_LIMIT}),
@@ -1692,7 +1696,7 @@ contract WormholeArbiterTest is ExecutorTest {
         // Call from a random address (not Tribunal) - should revert with UnauthorizedCaller
         vm.prank(filler);
         vm.expectRevert(IWormholeArbiter.UnauthorizedCaller.selector);
-        WormholeArbiterArbitrum.dispatchCallback{
+        wormholeArbiterArbitrum.dispatchCallback{
             value: quoteCost
         }(BASE_CHAIN_ID_STANDARD, compact, WITNESS, claimHash, CLAIMANT, 1e18, new uint256[](0), context);
     }
@@ -1703,11 +1707,11 @@ contract WormholeArbiterTest is ExecutorTest {
         setMessageFee(0 gwei);
 
         Lock[] memory locks = createLocks(1);
-        // Don't call TribunalMockArbitrum.setFilled() - claim is not filled
+        // Don't call tribunalMockArbitrum.setFilled() - claim is not filled
 
         vm.prank(filler);
         vm.expectRevert("Claim not filled in Tribunal");
-        WormholeArbiterArbitrum.send{
+        wormholeArbiterArbitrum.send{
             value: quoteCost
         }(
             BASE_CHAIN_ID_STANDARD,
@@ -1729,13 +1733,13 @@ contract WormholeArbiterTest is ExecutorTest {
         setMessageFee(10 gwei); // Set non-zero message fee
 
         Lock[] memory locks = createLocks(1);
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // Send with 0 value - not enough to pay message fee
         vm.prank(filler);
         vm.expectRevert(); // Will revert due to insufficient funds for publishMessage
-        WormholeArbiterArbitrum.send{
+        wormholeArbiterArbitrum.send{
             value: 0
         }(
             BASE_CHAIN_ID_STANDARD,
@@ -1758,13 +1762,13 @@ contract WormholeArbiterTest is ExecutorTest {
         setMessageFee(messageFee);
 
         Lock[] memory locks = createLocks(1);
-        bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
-        TribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
+        bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        tribunalMockArbitrum.setFilled(claimHash, CLAIMANT);
 
         // Send only enough for message fee, not enough for executor
         vm.prank(filler);
         vm.expectRevert(); // Will revert due to insufficient funds for requestExecution
-        WormholeArbiterArbitrum.send{
+        wormholeArbiterArbitrum.send{
             value: messageFee
         }(
             BASE_CHAIN_ID_STANDARD,
@@ -1791,10 +1795,10 @@ contract WormholeArbiterTest is ExecutorTest {
         BatchClaimWithLocks memory claim2 = createBatchClaimWithLocks(1, locks2);
 
         // Only set claim1 as filled, not claim2
-        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(
+        bytes32 claimHash1 = wormholeArbiterArbitrum.deriveClaimHash(
             claim1.sponsor, claim1.nonce, claim1.expires, claim1.witness, locks1
         );
-        TribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
+        tribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
         // claim2 is NOT filled
 
         BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](2);
@@ -1811,7 +1815,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         vm.prank(filler);
         vm.expectRevert("Claim not filled in Tribunal");
-        WormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
+        wormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
     }
 
     // test for batch send with invalid size (exceeds MAX_MESSAGE_SIZE)
@@ -1826,10 +1830,10 @@ contract WormholeArbiterTest is ExecutorTest {
         for (uint256 i = 0; i < numClaims; i++) {
             Lock[] memory locks = createLocks(3);
             claims[i] = createBatchClaimWithLocks(i, locks);
-            bytes32 claimHash = WormholeArbiterArbitrum.deriveClaimHash(
+            bytes32 claimHash = wormholeArbiterArbitrum.deriveClaimHash(
                 claims[i].sponsor, claims[i].nonce, claims[i].expires, claims[i].witness, locks
             );
-            TribunalMockArbitrum.setFilled(claimHash, bytes32(uint256(CLAIMANT) + i));
+            tribunalMockArbitrum.setFilled(claimHash, bytes32(uint256(CLAIMANT) + i));
         }
 
         BatchSend memory batch = BatchSend({
@@ -1842,7 +1846,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         vm.prank(filler);
         vm.expectRevert(IWormholeArbiter.MessageExceedsMaxSize.selector);
-        WormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
+        wormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
     }
 
     // test for multichain batch send with invalid claim hashes (not filled in tribunal)
@@ -1853,10 +1857,10 @@ contract WormholeArbiterTest is ExecutorTest {
         // First batch - filled
         Lock[] memory locks1 = createLocks(1);
         BatchClaimWithLocks memory claim1 = createBatchClaimWithLocks(0, locks1);
-        bytes32 claimHash1 = WormholeArbiterArbitrum.deriveClaimHash(
+        bytes32 claimHash1 = wormholeArbiterArbitrum.deriveClaimHash(
             claim1.sponsor, claim1.nonce, claim1.expires, claim1.witness, locks1
         );
-        TribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
+        tribunalMockArbitrum.setFilled(claimHash1, CLAIMANT);
 
         BatchClaimWithLocks[] memory claims1 = new BatchClaimWithLocks[](1);
         claims1[0] = claim1;
@@ -1886,7 +1890,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         vm.prank(filler);
         vm.expectRevert("Claim not filled in Tribunal");
-        WormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
+        wormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
     }
 
     ///// send test edge cases arbiter side /////
@@ -1902,7 +1906,7 @@ contract WormholeArbiterTest is ExecutorTest {
         );
 
         // Craft a VAA with a fake emitter address (not the real arbiter address)
-        // The real arbiter is at WormholeArbiterBase address, but we'll use a different address
+        // The real arbiter is at wormholeArbiterBase address, but we'll use a different address
         address fakeEmitter = address(0xdeadbeef);
         bytes32 fakeEmitterAddress = bytes32(uint256(uint160(fakeEmitter)));
         uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161); // Arbitrum = 23
@@ -1912,9 +1916,9 @@ contract WormholeArbiterTest is ExecutorTest {
         bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, fakeEmitterAddress, payload);
 
         // Try to deliver this VAA to the REAL arbiter - it should reject because
-        // emitter address (fakeEmitter) != address(WormholeArbiterBase)
+        // emitter address (fakeEmitter) != address(wormholeArbiterBase)
         vm.expectRevert("Message not from corresponding arbiter");
-        WormholeArbiterBase.executeVAAv1(encodedVaa);
+        wormholeArbiterBase.executeVAAv1(encodedVaa);
     }
 
     // test for executor send with invalid chain ID (unsupported chain)
@@ -1928,14 +1932,14 @@ contract WormholeArbiterTest is ExecutorTest {
         );
 
         // Craft a VAA with a valid emitter (the real arbiter) but UNSUPPORTED chain ID
-        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(wormholeArbiterBase))));
         uint16 unsupportedChainId = 99; // Not in WormholeMappings (supported: 2, 23, 30, 44)
 
         bytes memory encodedVaa = coreBridge().craftVaa(unsupportedChainId, realEmitterAddress, payload);
 
         // Should reject because chain ID 99 is not supported
         vm.expectRevert("Unsupported chain");
-        WormholeArbiterBase.executeVAAv1(encodedVaa);
+        wormholeArbiterBase.executeVAAv1(encodedVaa);
     }
 
     // test for executor send with value not equal to 0 (WormholeExecutor.sol)
@@ -1948,7 +1952,7 @@ contract WormholeArbiterTest is ExecutorTest {
             SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
         );
 
-        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(wormholeArbiterBase))));
         uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161); // 23
 
         // Set nonce to 0 (SINGLE_SEND) for valid message type
@@ -1958,7 +1962,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Call with msg.value > 0, should revert from _executeVaaDefaultMsgValueCheck
         vm.expectRevert();
-        WormholeArbiterBase.executeVAAv1{value: 1 wei}(encodedVaa);
+        wormholeArbiterBase.executeVAAv1{value: 1 wei}(encodedVaa);
     }
 
     // test for executor send with invalid nonce (WormholeExecutor.sol)
@@ -1971,7 +1975,7 @@ contract WormholeArbiterTest is ExecutorTest {
             SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
         );
 
-        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(wormholeArbiterBase))));
         uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161); // 23
 
         // Set nonce to 2 (SINGLE_POST) - valid enum but not valid for executor SEND path
@@ -1983,7 +1987,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Should revert with UnsupportedMessageType because nonce 2 (SINGLE_POST) is not valid for executor
         vm.expectRevert(IWormholeArbiter.UnsupportedMessageType.selector);
-        WormholeArbiterBase.executeVAAv1(encodedVaa);
+        wormholeArbiterBase.executeVAAv1(encodedVaa);
     }
 
     // test for executor with invalid vaa signature (WormholeExecutor.sol)
@@ -1996,7 +2000,7 @@ contract WormholeArbiterTest is ExecutorTest {
             SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE, CLAIMANT, 1e18
         );
 
-        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(wormholeArbiterBase))));
         uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
 
         coreBridge().setNonce(0); // SINGLE_SEND
@@ -2010,7 +2014,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Should revert due to invalid signature
         vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
-        WormholeArbiterBase.executeVAAv1(encodedVaa);
+        wormholeArbiterBase.executeVAAv1(encodedVaa);
     }
 
     // test for executor batch send with invalid vaa signature (WormholeExecutor.sol)
@@ -2032,7 +2036,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         bytes memory payload = this.encodeBatchSendHelper(claimants, scalingFactors, claims);
 
-        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(WormholeArbiterBase))));
+        bytes32 realEmitterAddress = bytes32(uint256(uint160(address(wormholeArbiterBase))));
         uint16 wormholeArbitrumChainId = WormholeMappings.toWormholeId(42161);
 
         coreBridge().setNonce(1); // BATCH_SEND
@@ -2044,6 +2048,6 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Should revert due to invalid signature
         vm.expectRevert(CoreBridgeLib.VerificationFailed.selector);
-        WormholeArbiterBase.executeVAAv1(encodedVaa);
+        wormholeArbiterBase.executeVAAv1(encodedVaa);
     }
 }
