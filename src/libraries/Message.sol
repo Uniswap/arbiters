@@ -17,10 +17,9 @@ import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
  * - encodeBatchPost/decodeBatchPost: Encodes Wormhole message payload for batch post (claim hashes only, bitmap compressed)
  * - encodeBatchSend/decodeBatchSend: Encodes Wormhole message payload for batch send (full claim data, length-prefixed)
  */
-
-//TODO: add custom errors
-
 library Message {
+    // ============ Flags ============
+
     /// @dev Flag bit 0: Allocator signature is present in the message
     uint8 constant HAS_ALLOCATOR_SIG = 0x01;
 
@@ -32,6 +31,60 @@ library Message {
 
     /// @dev Flag bit 3: Claim reduction scaling factor is present (not 1e18)
     uint8 constant HAS_CLAIM_REDUCTION = 0x08;
+
+    // ============ Constants ============
+
+    /// @dev Minimum send context length: flags(1) + gasLimit(16) + totalCost(32) + refundAddress(20)
+    uint256 constant MIN_SEND_CONTEXT_LENGTH = 69;
+
+    /// @dev Wormhole params length: gasLimit(16) + totalCost(32) + refundAddress(20)
+    uint256 constant WORMHOLE_PARAMS_LENGTH = 68;
+
+    /// @dev Fixed header length: sponsor(20) + nonce(32) + expires(32) + witness(32) + claimant(32) + flags(1)
+    uint256 constant FIXED_HEADER_LENGTH = 149;
+
+    /// @dev Commitment length: lockTag(12) + token(20) + amount(32)
+    uint256 constant COMMITMENT_LENGTH = 64;
+
+    /// @dev Maximum claims per batch post (15 bytes × 8 bits)
+    uint256 constant MAX_BATCH_POST_CLAIMS = 120;
+
+    /// @dev Header length for batch messages
+    uint256 constant BATCH_HEADER_LENGTH = 32;
+
+    // ============ Errors ============
+
+    error AllocatorDataTooLong();
+    error SponsorSignatureTooLong();
+    error ContextTooShort();
+    error ContextTooShortForAllocatorLength();
+    error ContextTooShortForAllocatorSignature();
+    error ContextTooShortForSponsorLength();
+    error ContextTooShortForSponsorSignature();
+    error ContextTooShortForWormholeParams();
+    error ContextHasTrailingData();
+    error ArrayLengthMismatch();
+    error MaxClaimsExceeded();
+
+    // ============ Internal Helpers ============
+
+    /// @dev Validates signature lengths and returns flags
+    function _validateAndSetSignatureFlags(uint256 allocatorLen, uint256 sponsorLen)
+        private
+        pure
+        returns (uint8 flags)
+    {
+        if (allocatorLen > 0) {
+            if (allocatorLen > type(uint16).max) revert AllocatorDataTooLong();
+            flags |= HAS_ALLOCATOR_SIG;
+        }
+        if (sponsorLen > 0) {
+            if (sponsorLen > type(uint16).max) revert SponsorSignatureTooLong();
+            flags |= HAS_SPONSOR_SIG;
+        }
+    }
+
+    // ============ Encoding Functions ============
 
     /**
      * @notice Encodes send context for BATCH_SEND operations
@@ -51,17 +104,8 @@ library Message {
         bytes calldata signedQuote,
         address refundAddress
     ) internal pure returns (bytes memory) {
-        uint8 flags;
-        if (allocatorData.length > 0) {
-            require(allocatorData.length <= type(uint16).max, "allocator data too long");
-            flags |= HAS_ALLOCATOR_SIG;
-        }
-        if (sponsorSignature.length > 0) {
-            require(sponsorSignature.length <= type(uint16).max, "sponsor signature too long");
-            flags |= HAS_SPONSOR_SIG;
-        }
         // TODO: add signed quote length requirements here per logic in executor
-        flags |= IS_SEND;
+        uint8 flags = _validateAndSetSignatureFlags(allocatorData.length, sponsorSignature.length) | IS_SEND;
 
         // Calculate total size: 1 (flags) + allocatorData + sponsorSignature + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress) + signedQuote.length
         // Each signature includes 2-byte length prefix when present
@@ -106,7 +150,7 @@ library Message {
             ptr := add(ptr, 32)
 
             // Store refundAddress (20 bytes)
-            // TODO: possibly add tx.orgin for flag with no refund address
+            // TODO: possibly add tx.origin for flag with no refund address
             mstore(ptr, shl(96, refundAddress))
             ptr := add(ptr, 20)
 
@@ -138,7 +182,7 @@ library Message {
             address refundAddress
         )
     {
-        require(context.length >= 69, "context too short"); // Minimum: 1 (flags) + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress)
+        if (context.length < MIN_SEND_CONTEXT_LENGTH) revert ContextTooShort();
 
         uint8 flags;
         assembly ("memory-safe") {
@@ -149,13 +193,13 @@ library Message {
 
         // Read allocator data if present (2-byte length prefix + data)
         if ((flags & HAS_ALLOCATOR_SIG) != 0) {
-            require(context.length >= offset + 2, "context too short for allocator length");
+            if (context.length < offset + 2) revert ContextTooShortForAllocatorLength();
             uint16 allocatorLength;
             assembly ("memory-safe") {
                 allocatorLength := shr(240, calldataload(add(context.offset, offset)))
             }
             offset += 2;
-            require(context.length >= offset + allocatorLength, "context too short for allocator signature");
+            if (context.length < offset + allocatorLength) revert ContextTooShortForAllocatorSignature();
             allocatorData = context[offset:offset + allocatorLength];
             offset += allocatorLength;
         } else {
@@ -164,13 +208,13 @@ library Message {
 
         // Read sponsor signature if present (2-byte length prefix + data)
         if ((flags & HAS_SPONSOR_SIG) != 0) {
-            require(context.length >= offset + 2, "context too short for sponsor length");
+            if (context.length < offset + 2) revert ContextTooShortForSponsorLength();
             uint16 sponsorLength;
             assembly ("memory-safe") {
                 sponsorLength := shr(240, calldataload(add(context.offset, offset)))
             }
             offset += 2;
-            require(context.length >= offset + sponsorLength, "context too short for sponsor signature");
+            if (context.length < offset + sponsorLength) revert ContextTooShortForSponsorSignature();
             sponsorSignature = context[offset:offset + sponsorLength];
             offset += sponsorLength;
         } else {
@@ -178,7 +222,7 @@ library Message {
         }
 
         // Read gasLimit (16 bytes), totalCost (32 bytes), and refundAddress (20 bytes)
-        require(context.length >= offset + 68, "context too short for gasLimit, totalCost, and refundAddress");
+        if (context.length < offset + WORMHOLE_PARAMS_LENGTH) revert ContextTooShortForWormholeParams();
         assembly ("memory-safe") {
             let gasLimit := shr(128, calldataload(add(context.offset, offset)))
             let totalCost := calldataload(add(context.offset, add(offset, 16)))
@@ -188,11 +232,10 @@ library Message {
             mstore(params, gasLimit)
             mstore(add(params, 32), totalCost)
         }
-        offset += 68;
+        offset += WORMHOLE_PARAMS_LENGTH;
 
         // Read signedQuote (remaining bytes)
         // TODO: add a minimum length check for signed quote here per logic in https://github.com/wormholelabs-xyz/example-messaging-executor/blob/main/evm/src/Executor.sol
-        require(context.length >= offset, "context too short for signedQuote");
         signedQuote = context[offset:];
     }
 
@@ -210,16 +253,8 @@ library Message {
         pure
         returns (bytes memory)
     {
-        uint8 flags;
-        if (allocatorData.length > 0) {
-            require(allocatorData.length <= type(uint16).max, "allocator data too long");
-            flags |= HAS_ALLOCATOR_SIG;
-        }
-        if (sponsorSignature.length > 0) {
-            require(sponsorSignature.length <= type(uint16).max, "sponsor signature too long");
-            flags |= HAS_SPONSOR_SIG;
-        }
-        // Note: IS_SEND flag is NOT set for Post operations, set to 0
+        // Note: IS_SEND flag is NOT set for Post operations
+        uint8 flags = _validateAndSetSignatureFlags(allocatorData.length, sponsorSignature.length);
 
         // Calculate total size: 1 (flags) + allocatorData + sponsorSignature
         // Each signature includes 2-byte length prefix when present
@@ -266,7 +301,7 @@ library Message {
         pure
         returns (bytes calldata allocatorData, bytes calldata sponsorSignature)
     {
-        require(context.length >= 1, "context too short");
+        if (context.length < 1) revert ContextTooShort();
 
         uint8 flags;
         assembly ("memory-safe") {
@@ -277,13 +312,13 @@ library Message {
 
         // Read allocator data if present (2-byte length prefix + data)
         if ((flags & HAS_ALLOCATOR_SIG) != 0) {
-            require(context.length >= offset + 2, "context too short for allocator length");
+            if (context.length < offset + 2) revert ContextTooShortForAllocatorLength();
             uint16 allocatorLength;
             assembly ("memory-safe") {
                 allocatorLength := shr(240, calldataload(add(context.offset, offset)))
             }
             offset += 2;
-            require(context.length >= offset + allocatorLength, "context too short for allocator signature");
+            if (context.length < offset + allocatorLength) revert ContextTooShortForAllocatorSignature();
             allocatorData = context[offset:offset + allocatorLength];
             offset += allocatorLength;
         } else {
@@ -292,13 +327,13 @@ library Message {
 
         // Read sponsor signature if present (2-byte length prefix + data)
         if ((flags & HAS_SPONSOR_SIG) != 0) {
-            require(context.length >= offset + 2, "context too short for sponsor length");
+            if (context.length < offset + 2) revert ContextTooShortForSponsorLength();
             uint16 sponsorLength;
             assembly ("memory-safe") {
                 sponsorLength := shr(240, calldataload(add(context.offset, offset)))
             }
             offset += 2;
-            require(context.length >= offset + sponsorLength, "context too short for sponsor signature");
+            if (context.length < offset + sponsorLength) revert ContextTooShortForSponsorSignature();
             sponsorSignature = context[offset:offset + sponsorLength];
             offset += sponsorLength;
         } else {
@@ -306,7 +341,7 @@ library Message {
         }
 
         // Verify we've consumed the entire context
-        require(context.length == offset, "context has unexpected trailing data");
+        if (context.length != offset) revert ContextHasTrailingData();
     }
 
     /**
@@ -337,16 +372,7 @@ library Message {
         bytes32 claimant,
         uint256 claimReductionScalingFactor
     ) internal pure returns (bytes memory) {
-        // Calculate flags
-        uint8 flags;
-        if (allocatorData.length > 0) {
-            require(allocatorData.length <= type(uint16).max, "allocator data too long");
-            flags |= HAS_ALLOCATOR_SIG;
-        }
-        if (sponsorSignature.length > 0) {
-            require(sponsorSignature.length <= type(uint16).max, "sponsor signature too long");
-            flags |= HAS_SPONSOR_SIG;
-        }
+        uint8 flags = _validateAndSetSignatureFlags(allocatorData.length, sponsorSignature.length);
 
         uint256 scalingFactorSize = 0;
         if (claimReductionScalingFactor != 1e18) {
@@ -355,12 +381,12 @@ library Message {
         }
 
         // Calculate total size
-        // Fixed: 20 + 32 + 32 + 32 + 32 + 1 = 149
-        // Variable: allocatorData + sponsorSignature + scalingFactor + commitments
         // Each signature includes 2-byte length prefix when present
         uint256 allocatorSize = allocatorData.length > 0 ? allocatorData.length + 2 : 0;
         uint256 sponsorSize = sponsorSignature.length > 0 ? sponsorSignature.length + 2 : 0;
-        uint256 totalSize = 149 + allocatorSize + sponsorSize + scalingFactorSize + (commitments.length * 64);
+        uint256 totalSize =
+            FIXED_HEADER_LENGTH + allocatorSize + sponsorSize + scalingFactorSize
+            + (commitments.length * COMMITMENT_LENGTH);
 
         bytes memory result = new bytes(totalSize);
 
@@ -375,7 +401,7 @@ library Message {
             mstore(add(ptr, 116), claimant) // claimant at offset 116
             mstore8(add(ptr, 148), flags) // flags at offset 148
 
-            ptr := add(ptr, 149)
+            ptr := add(ptr, FIXED_HEADER_LENGTH)
 
             // Copy allocator data if present (2-byte length prefix + data)
             if gt(allocatorData.length, 0) {
@@ -434,8 +460,8 @@ library Message {
      * @dev Transforms Locks into BatchClaimComponents with scaled amounts
      * @dev Each Lock becomes one BatchClaimComponent with id = pack(lockTag, token)
      * @dev Format: [sponsor(20)][nonce(32)][expires(32)][witness(32)][claimant(32)][flags(1)]
-     *              [allocatorData(0|64)][sponsorSignature(0|64)][claimReductionScalingFactor(0|32)]
-     *              [commitments: lockTag(12)|token(20)|amount(32) repeated]
+     *              [allocatorDataLength(2)][allocatorData(variable)][sponsorSigLength(2)][sponsorSig(variable)]
+     *              [claimReductionScalingFactor(0|32)][commitments: lockTag(12)|token(20)|amount(32) repeated]
      * @dev No bounds checking - message integrity guaranteed by VAA verification and sender validation
      * @param message Encoded message bytes
      * @return batchClaim Fully constructed BatchClaim with WITNESS_TYPESTRING
@@ -462,7 +488,7 @@ library Message {
             flags := byte(0, calldataload(add(msgPtr, 148)))
         }
 
-        uint256 offset = 149;
+        uint256 offset = FIXED_HEADER_LENGTH;
 
         // Read allocator data if present (2-byte length prefix + data)
         // Note: No length check needed - message integrity guaranteed by corresponding encode function
@@ -504,7 +530,7 @@ library Message {
 
         // Decode commitments and transform to BatchClaimComponents
         uint256 remainingBytes = messageLength - offset;
-        uint256 commitmentsCount = remainingBytes / 64;
+        uint256 commitmentsCount = remainingBytes / COMMITMENT_LENGTH;
 
         BatchClaimComponent[] memory claims = new BatchClaimComponent[](commitmentsCount);
 
@@ -515,7 +541,7 @@ library Message {
                 uint256 amount;
 
                 assembly ("memory-safe") {
-                    let msgPtr := add(add(message.offset, offset), mul(i, 64))
+                    let msgPtr := add(add(message.offset, offset), mul(i, COMMITMENT_LENGTH))
 
                     // Load lockTag (12 bytes)
                     lockTag := calldataload(msgPtr)
@@ -584,11 +610,11 @@ library Message {
         returns (bytes memory)
     {
         uint256 length = claimants.length;
-        require(length == claimHashes.length && length == scalingFactors.length, "array length mismatch");
-        require(length <= 120, "Max 120 claims per batch");
+        if (length != claimHashes.length || length != scalingFactors.length) revert ArrayLengthMismatch();
+        if (length > MAX_BATCH_POST_CLAIMS) revert MaxClaimsExceeded();
 
         if (length == 0) {
-            return new bytes(32); // Just header with itemCount = 0
+            return new bytes(BATCH_HEADER_LENGTH); // Just header with itemCount = 0
         }
 
         // First pass: build bitmaps and count storage needed
@@ -638,7 +664,6 @@ library Message {
             let claimantsPtr := add(claimants, 32)
             let hashesPtr := add(claimHashes, 32)
             let factorsPtr := add(scalingFactors, 32)
-            let BASE_SCALING := 1000000000000000000 // 1e18
 
             // Store claimants (only where changeClaimants bit is set)
             for { let i := 0 } lt(i, length) { i := add(i, 1) } {

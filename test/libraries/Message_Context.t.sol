@@ -93,7 +93,7 @@ contract MessageContextTest is Test {
     function test_encodeSendContext_revertsOnAllocatorDataTooLong() public {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        vm.expectRevert("allocator data too long");
+        vm.expectRevert(Message.AllocatorDataTooLong.selector);
         bytes memory tooLong = new bytes(65536);
         wrapper.encodeSendContext(tooLong, hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
     }
@@ -102,7 +102,7 @@ contract MessageContextTest is Test {
     function test_encodeSendContext_revertsOnSponsorSignatureTooLong() public {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        vm.expectRevert("sponsor signature too long");
+        vm.expectRevert(Message.SponsorSignatureTooLong.selector);
         bytes memory tooLong = new bytes(65536);
         wrapper.encodeSendContext(hex"", tooLong, params, SIGNED_QUOTE, REFUND_ADDRESS);
     }
@@ -266,7 +266,7 @@ contract MessageContextTest is Test {
     function test_decodeSendContext_revertsOnContextTooShort() public {
         bytes memory tooShort = new bytes(68);
 
-        vm.expectRevert("context too short");
+        vm.expectRevert(Message.ContextTooShort.selector);
         wrapper.decodeSendContext(tooShort);
     }
 
@@ -329,14 +329,14 @@ contract MessageContextTest is Test {
 
     /// @notice Test encodePostContext reverts with invalid allocator signature length
     function test_encodePostContext_revertsOnAllocatorDataTooLong() public {
-        vm.expectRevert("allocator data too long");
+        vm.expectRevert(Message.AllocatorDataTooLong.selector);
         bytes memory tooLong = new bytes(65536);
         wrapper.encodePostContext(tooLong, hex"");
     }
 
     /// @notice Test encodePostContext reverts with sponsor signature exceeding uint16 max
     function test_encodePostContext_revertsOnSponsorSignatureTooLong() public {
-        vm.expectRevert("sponsor signature too long");
+        vm.expectRevert(Message.SponsorSignatureTooLong.selector);
         bytes memory tooLong = new bytes(65536);
         wrapper.encodePostContext(hex"", tooLong);
     }
@@ -385,7 +385,7 @@ contract MessageContextTest is Test {
     function test_decodePostContext_revertsOnContextTooShort() public {
         bytes memory tooShort = new bytes(0);
 
-        vm.expectRevert("context too short");
+        vm.expectRevert(Message.ContextTooShort.selector);
         wrapper.decodePostContext(tooShort);
     }
 
@@ -400,7 +400,7 @@ contract MessageContextTest is Test {
             withTrailing[i] = validEncoded[i];
         }
 
-        vm.expectRevert("context has unexpected trailing data");
+        vm.expectRevert(Message.ContextHasTrailingData.selector);
         wrapper.decodePostContext(withTrailing);
     }
 

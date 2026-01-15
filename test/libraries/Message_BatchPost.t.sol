@@ -512,7 +512,7 @@ contract MessageBatchPostTest is Test {
         bytes32[] memory claimHashes = new bytes32[](3); // Different length
         uint256[] memory scalingFactors = new uint256[](2);
 
-        vm.expectRevert("array length mismatch");
+        vm.expectRevert(Message.ArrayLengthMismatch.selector);
         wrapper.encodeBatchPost(claimants, claimHashes, scalingFactors);
     }
 
@@ -522,7 +522,7 @@ contract MessageBatchPostTest is Test {
         bytes32[] memory claimHashes = new bytes32[](2);
         uint256[] memory scalingFactors = new uint256[](3); // Different length
 
-        vm.expectRevert("array length mismatch");
+        vm.expectRevert(Message.ArrayLengthMismatch.selector);
         wrapper.encodeBatchPost(claimants, claimHashes, scalingFactors);
     }
 
@@ -539,7 +539,7 @@ contract MessageBatchPostTest is Test {
             scalingFactors[i] = SCALING_FACTOR_FULL;
         }
 
-        vm.expectRevert("Max 120 claims per batch");
+        vm.expectRevert(Message.MaxClaimsExceeded.selector);
         wrapper.encodeBatchPost(claimants, claimHashes, scalingFactors);
     }
 

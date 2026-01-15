@@ -168,7 +168,7 @@ contract MessageTest is Test {
         // Create allocator data that exceeds uint16.max (65535 bytes)
         // We can't actually create a 65536+ byte array in a single test due to memory limits,
         // but we can use vm.expectRevert with a crafted calldata
-        vm.expectRevert("allocator data too long");
+        vm.expectRevert(Message.AllocatorDataTooLong.selector);
 
         // This will fail in practice due to memory, but the revert check is what matters
         bytes memory tooLong = new bytes(65536);
@@ -181,7 +181,7 @@ contract MessageTest is Test {
     function test_encode_revertsOnSponsorSignatureTooLong() public {
         Lock[] memory locks = createSingleLock();
 
-        vm.expectRevert("sponsor signature too long");
+        vm.expectRevert(Message.SponsorSignatureTooLong.selector);
 
         bytes memory tooLong = new bytes(65536);
         wrapper.encode(
