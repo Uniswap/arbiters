@@ -1940,7 +1940,7 @@ contract WormholeArbiterTest is ExecutorTest {
         bytes memory encodedVaa = coreBridge().craftVaa(unsupportedChainId, realEmitterAddress, payload);
 
         // Should reject because chain ID 99 is not supported
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, unsupportedChainId));
         wormholeArbiterBase.executeVAAv1(encodedVaa);
     }
 

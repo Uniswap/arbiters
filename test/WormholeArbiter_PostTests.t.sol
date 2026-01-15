@@ -1270,7 +1270,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         bytes memory encodedVaa = coreBridge().craftVaa(unsupportedChainId, realEmitterAddress, payload);
 
         // Should reject because chain ID 99 is not supported
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, unsupportedChainId));
         wormholeArbiterBase.receivePost(encodedVaa);
     }
 
@@ -1306,7 +1306,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         claims[0] = claim;
 
         // Should reject because chain ID 99 is not supported
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, unsupportedChainId));
         wormholeArbiterBase.receiveBatchPost(encodedVaa, claims);
     }
 
@@ -1800,7 +1800,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         bytes[] memory vaas = new bytes[](1);
         vaas[0] = encodedVaa;
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, invalidChainId));
         wormholeArbiterBase.receivePosts(vaas);
     }
 

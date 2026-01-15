@@ -144,34 +144,34 @@ contract WormholeMappingsTest is Test {
     /// @notice Test validateChainId reverts on unsupported Wormhole chain IDs
     function test_validateChainId_revertsOnUnsupportedChain() public {
         // Test various unsupported Wormhole chain IDs
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 0));
         wrapper.validateChainId(0);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 1));
         wrapper.validateChainId(1);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 3));
         wrapper.validateChainId(3);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 22));
         wrapper.validateChainId(22);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 24));
         wrapper.validateChainId(24);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 29));
         wrapper.validateChainId(29);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 31));
         wrapper.validateChainId(31);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 43));
         wrapper.validateChainId(43);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 45));
         wrapper.validateChainId(45);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 100));
         wrapper.validateChainId(100);
     }
 
@@ -183,7 +183,7 @@ contract WormholeMappingsTest is Test {
                 && wormholeChainId != BASE_WORMHOLE_ID && wormholeChainId != UNICHAIN_WORMHOLE_ID
         );
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, wormholeChainId));
         wrapper.validateChainId(wormholeChainId);
     }
 
@@ -194,101 +194,101 @@ contract WormholeMappingsTest is Test {
     /// @notice Test toWormholeId reverts on unsupported EVM chain IDs
     function test_toWormholeId_revertsOnUnsupportedChain() public {
         // Test various unsupported chain IDs
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 0));
         wrapper.toWormholeId(0);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 2));
         wrapper.toWormholeId(2);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 129));
         wrapper.toWormholeId(129);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 131));
         wrapper.toWormholeId(131);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 8452));
         wrapper.toWormholeId(8452);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 8454));
         wrapper.toWormholeId(8454);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 42160));
         wrapper.toWormholeId(42160);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 42162));
         wrapper.toWormholeId(42162);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 999999));
         wrapper.toWormholeId(999999);
     }
 
     /// @notice Test toEvmId reverts on unsupported Wormhole chain IDs
     function test_toEvmId_revertsOnUnsupportedChain() public {
         // Test various unsupported Wormhole chain IDs
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 0));
         wrapper.toEvmId(0);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 1));
         wrapper.toEvmId(1);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 3));
         wrapper.toEvmId(3);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 22));
         wrapper.toEvmId(22);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 24));
         wrapper.toEvmId(24);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 29));
         wrapper.toEvmId(29);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 31));
         wrapper.toEvmId(31);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 43));
         wrapper.toEvmId(43);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 45));
         wrapper.toEvmId(45);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, 100));
         wrapper.toEvmId(100);
     }
 
     /// @notice Test getWormhole reverts on unsupported EVM chain IDs
     function test_getWormhole_revertsOnUnsupportedChain() public {
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 0));
         wrapper.getWormhole(0);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 2));
         wrapper.getWormhole(2);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 10));
         wrapper.getWormhole(10);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 137));
         wrapper.getWormhole(137); // Polygon
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 56));
         wrapper.getWormhole(56); // BSC
     }
 
     /// @notice Test getWormholeExecutor reverts on unsupported EVM chain IDs
     function test_getWormholeExecutor_revertsOnUnsupportedChain() public {
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 0));
         wrapper.getWormholeExecutor(0);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 2));
         wrapper.getWormholeExecutor(2);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 10));
         wrapper.getWormholeExecutor(10);
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 137));
         wrapper.getWormholeExecutor(137); // Polygon
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, 56));
         wrapper.getWormholeExecutor(56); // BSC
     }
 
@@ -300,7 +300,7 @@ contract WormholeMappingsTest is Test {
                 && evmChainId != ARBITRUM_EVM_ID
         );
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, evmChainId));
         wrapper.toWormholeId(evmChainId);
     }
 
@@ -312,7 +312,7 @@ contract WormholeMappingsTest is Test {
                 && wormholeChainId != BASE_WORMHOLE_ID && wormholeChainId != UNICHAIN_WORMHOLE_ID
         );
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedWormholeChain.selector, wormholeChainId));
         wrapper.toEvmId(wormholeChainId);
     }
 
@@ -324,7 +324,7 @@ contract WormholeMappingsTest is Test {
                 && evmChainId != ARBITRUM_EVM_ID
         );
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, evmChainId));
         wrapper.getWormhole(evmChainId);
     }
 
@@ -336,7 +336,7 @@ contract WormholeMappingsTest is Test {
                 && evmChainId != ARBITRUM_EVM_ID
         );
 
-        vm.expectRevert("Unsupported chain");
+        vm.expectRevert(abi.encodeWithSelector(WormholeMappings.UnsupportedEvmChain.selector, evmChainId));
         wrapper.getWormholeExecutor(evmChainId);
     }
 }
