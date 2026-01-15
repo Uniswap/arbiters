@@ -66,8 +66,9 @@ contract MessageContextTest is Test {
     uint128 constant GAS_LIMIT = 500_000;
     uint256 constant TOTAL_COST = 1 ether;
 
-    // Mock signed quote
-    bytes constant SIGNED_QUOTE = hex"aabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd";
+    // Mock signed quote (68 bytes minimum per Wormhole Executor requirements)
+    bytes constant SIGNED_QUOTE = hex"aabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd"
+        hex"aabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd" hex"aabbccdd";
 
     // Mock refund address
     address constant REFUND_ADDRESS = address(0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF);
@@ -192,11 +193,32 @@ contract MessageContextTest is Test {
         assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
-    /// @notice Test round trip with empty signed quote
-    function test_sendContext_roundTrip_emptySignedQuote() public view {
+    /// @notice Test that empty signed quote reverts
+    function test_sendContext_revertsOnSignedQuoteTooShort_empty() public {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
 
-        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, hex"", REFUND_ADDRESS);
+        vm.expectRevert(Message.SignedQuoteTooShort.selector);
+        wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, hex"", REFUND_ADDRESS);
+    }
+
+    /// @notice Test that 67-byte signed quote reverts (minimum is 68)
+    function test_sendContext_revertsOnSignedQuoteTooShort_67bytes() public {
+        WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
+        bytes memory shortQuote = new bytes(67);
+
+        vm.expectRevert(Message.SignedQuoteTooShort.selector);
+        wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, shortQuote, REFUND_ADDRESS);
+    }
+
+    /// @notice Test that exactly 68-byte signed quote succeeds (minimum length)
+    function test_sendContext_roundTrip_minSignedQuote() public view {
+        WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
+        bytes memory minQuote = new bytes(68);
+        for (uint256 i = 0; i < 68; i++) {
+            minQuote[i] = bytes1(uint8(i));
+        }
+
+        bytes memory encoded = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, minQuote, REFUND_ADDRESS);
 
         (
             bytes memory decodedAllocator,
@@ -209,7 +231,7 @@ contract MessageContextTest is Test {
         assertEq(keccak256(decodedAllocator), keccak256(ALLOCATOR_SIG), "allocator data mismatch");
         assertEq(keccak256(decodedSponsor), keccak256(SPONSOR_SIG), "sponsor signature mismatch");
         assertWormholeParamsEqual(params, decodedParams);
-        assertEq(decodedQuote.length, 0, "signed quote should be empty");
+        assertEq(keccak256(decodedQuote), keccak256(minQuote), "signed quote mismatch");
         assertEq(decodedRefundAddress, REFUND_ADDRESS, "refund address mismatch");
     }
 
@@ -270,6 +292,18 @@ contract MessageContextTest is Test {
         wrapper.decodeSendContext(tooShort);
     }
 
+    /// @notice Test decodeSendContext reverts when signed quote portion is too short
+    function test_decodeSendContext_revertsOnSignedQuoteTooShort() public {
+        // Minimum valid context needs 137 bytes: flags(1) + gasLimit(16) + totalCost(32) + refundAddress(20) + signedQuote(68)
+        // Create a context with 136 bytes (67 bytes for signed quote - one byte short)
+        bytes memory shortContext = new bytes(136);
+        // Set IS_SEND flag (0x04)
+        shortContext[0] = 0x04;
+
+        vm.expectRevert(Message.SignedQuoteTooShort.selector);
+        wrapper.decodeSendContext(shortContext);
+    }
+
     /// @notice Fuzz test: encodeSendContext/decodeSendContext round trip with variable-length signatures
     function testFuzz_sendContext_roundTrip(
         uint16 allocatorSigLength,
@@ -280,11 +314,12 @@ contract MessageContextTest is Test {
         bytes32 randomSeed,
         address refundAddress
     ) public view {
-        // Bound lengths to reasonable sizes for testing (0 to 2048 bytes)
+        // Bound lengths to reasonable sizes for testing
         // Testing up to uint16.max would be too expensive for fuzzing
         allocatorSigLength = uint16(bound(allocatorSigLength, 0, 2048));
         sponsorSigLength = uint16(bound(sponsorSigLength, 0, 2048));
-        quoteLength = uint16(bound(quoteLength, 0, 2048));
+        // Signed quote minimum is 68 bytes per Wormhole Executor requirements
+        quoteLength = uint16(bound(quoteLength, 68, 2048));
 
         // Create variable-length signatures with pseudo-random data
         bytes memory allocatorData = new bytes(allocatorSigLength);
@@ -507,27 +542,28 @@ contract MessageContextTest is Test {
     /// @notice Test send context encoding produces expected sizes
     function test_sendContext_sizes() public view {
         WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
+        bytes memory minQuote = new bytes(68);
 
-        // Minimum size: 1 (flags) + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress) = 69 bytes (with empty quote)
-        bytes memory encoded1 = wrapper.encodeSendContext(hex"", hex"", params, hex"", REFUND_ADDRESS);
-        assertEq(encoded1.length, 69, "minimum size should be 69");
+        // Minimum size: 1 (flags) + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress) + 68 (min quote) = 137 bytes
+        bytes memory encoded1 = wrapper.encodeSendContext(hex"", hex"", params, minQuote, REFUND_ADDRESS);
+        assertEq(encoded1.length, 137, "minimum size should be 137");
 
-        // With allocator: 69 + 2 (length prefix) + 64 (data) = 135
-        bytes memory encoded2 = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, hex"", REFUND_ADDRESS);
-        assertEq(encoded2.length, 135, "with allocator should be 135");
+        // With allocator: 137 + 2 (length prefix) + 64 (data) = 203
+        bytes memory encoded2 = wrapper.encodeSendContext(ALLOCATOR_SIG, hex"", params, minQuote, REFUND_ADDRESS);
+        assertEq(encoded2.length, 203, "with allocator should be 203");
 
-        // With sponsor: 69 + 2 (length prefix) + 64 (data) = 135
-        bytes memory encoded3 = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, hex"", REFUND_ADDRESS);
-        assertEq(encoded3.length, 135, "with sponsor should be 135");
+        // With sponsor: 137 + 2 (length prefix) + 64 (data) = 203
+        bytes memory encoded3 = wrapper.encodeSendContext(hex"", SPONSOR_SIG, params, minQuote, REFUND_ADDRESS);
+        assertEq(encoded3.length, 203, "with sponsor should be 203");
 
-        // With both: 69 + 2 + 64 + 2 + 64 = 201
-        bytes memory encoded4 = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, hex"", REFUND_ADDRESS);
-        assertEq(encoded4.length, 201, "with both should be 201");
+        // With both: 137 + 2 + 64 + 2 + 64 = 269
+        bytes memory encoded4 = wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, minQuote, REFUND_ADDRESS);
+        assertEq(encoded4.length, 269, "with both should be 269");
 
-        // With both + 32-byte quote: 201 + 32 = 233
+        // With both + SIGNED_QUOTE (68 bytes): same as above since SIGNED_QUOTE is min length
         bytes memory encoded5 =
             wrapper.encodeSendContext(ALLOCATOR_SIG, SPONSOR_SIG, params, SIGNED_QUOTE, REFUND_ADDRESS);
-        assertEq(encoded5.length, 233, "with both + quote should be 233");
+        assertEq(encoded5.length, 269, "with both + SIGNED_QUOTE should be 269");
     }
 
     /// @notice Test post context encoding produces expected sizes

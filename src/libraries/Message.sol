@@ -55,6 +55,9 @@ library Message {
     /// @dev Default scaling factor representing 100% (no reduction)
     uint256 constant DEFAULT_SCALING_FACTOR = 1e18;
 
+    /// @dev Minimum signed quote length per Wormhole Executor requirements
+    uint256 constant MIN_SIGNED_QUOTE_LENGTH = 68;
+
     // ============ Errors ============
 
     error AllocatorDataTooLong();
@@ -68,6 +71,7 @@ library Message {
     error ContextHasTrailingData();
     error ArrayLengthMismatch();
     error MaxClaimsExceeded();
+    error SignedQuoteTooShort();
 
     // ============ Internal Helpers ============
 
@@ -112,7 +116,7 @@ library Message {
         bytes calldata signedQuote,
         address refundAddress
     ) internal pure returns (bytes memory) {
-        // TODO: add signed quote length requirements here per logic in executor
+        if (signedQuote.length < MIN_SIGNED_QUOTE_LENGTH) revert SignedQuoteTooShort();
         uint8 flags = _validateAndSetSignatureFlags(allocatorData.length, sponsorSignature.length) | IS_SEND;
 
         // Calculate total size: 1 (flags) + allocatorData + sponsorSignature + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress) + signedQuote.length
@@ -241,8 +245,8 @@ library Message {
         }
         offset += WORMHOLE_PARAMS_LENGTH;
 
-        // Read signedQuote (remaining bytes)
-        // TODO: add a minimum length check for signed quote here per logic in https://github.com/wormholelabs-xyz/example-messaging-executor/blob/main/evm/src/Executor.sol
+        // Read signedQuote (remaining bytes) with check per https://github.com/wormholelabs-xyz/example-messaging-executor/blob/main/evm/src/Executor.sol logic
+        if (context.length < offset + MIN_SIGNED_QUOTE_LENGTH) revert SignedQuoteTooShort();
         signedQuote = context[offset:];
     }
 
