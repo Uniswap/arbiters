@@ -652,32 +652,6 @@ contract MessageTest is Test {
     // EDGE CASE & SECURITY TESTS
     //////////////////////////////////////////////////////////////
 
-    /// @notice Test decode reverts when commitments length is not a multiple of 64
-    function test_decode_revertsOnInvalidCommitmentsLength() public {
-        // Create a valid encoded message
-        Lock[] memory locks = createSingleLock();
-        bytes memory encoded = wrapper.encode(
-            SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
-        );
-
-        // Truncate the message by 10 bytes
-        bytes memory truncated = new bytes(encoded.length - 10);
-        for (uint256 i = 0; i < truncated.length; i++) {
-            truncated[i] = encoded[i];
-        }
-
-        vm.expectRevert("invalid commitments length");
-        wrapper.decode(truncated);
-    }
-
-    /// @notice Test decode reverts on message too short for fixed fields
-    function test_decode_revertsOnMessageTooShort() public {
-        bytes memory tooShort = new bytes(100); // Less than 149 bytes
-
-        vm.expectRevert("message too short");
-        wrapper.decode(tooShort);
-    }
-
     /// @notice Test round trip with many commitments (stress test)
     function test_roundTrip_manyCommitments() public view {
         // Create 50 locks

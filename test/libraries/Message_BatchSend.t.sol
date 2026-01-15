@@ -354,14 +354,6 @@ contract MessageBatchSendTest is Test {
         }
     }
 
-    /// @notice Test decode reverts on message too short
-    function test_batchSend_decode_revertsOnMessageTooShort() public {
-        bytes memory tooShort = new bytes(16); // Less than 32 bytes (count size)
-
-        vm.expectRevert("message too short");
-        wrapper.decodeBatchSend(tooShort);
-    }
-
     /// @notice Test empty batch (count = 0)
     function test_batchSend_roundTrip_emptyBatch() public view {
         BatchClaimWithLocks[] memory claims = new BatchClaimWithLocks[](0);

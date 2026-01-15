@@ -436,13 +436,12 @@ library Message {
      * @dev Format: [sponsor(20)][nonce(32)][expires(32)][witness(32)][claimant(32)][flags(1)]
      *              [allocatorData(0|64)][sponsorSignature(0|64)][claimReductionScalingFactor(0|32)]
      *              [commitments: lockTag(12)|token(20)|amount(32) repeated]
+     * @dev No bounds checking - message integrity guaranteed by VAA verification and sender validation
      * @param message Encoded message bytes
      * @return batchClaim Fully constructed BatchClaim with WITNESS_TYPESTRING
      */
     function decode(bytes calldata message) internal pure returns (BatchClaim memory batchClaim) {
         uint256 messageLength = message.length;
-        require(messageLength >= 149, "message too short");
-
         address sponsor;
         uint256 nonce;
         uint256 expires;
@@ -505,7 +504,6 @@ library Message {
 
         // Decode commitments and transform to BatchClaimComponents
         uint256 remainingBytes = messageLength - offset;
-        require(remainingBytes % 64 == 0, "invalid commitments length");
         uint256 commitmentsCount = remainingBytes / 64;
 
         BatchClaimComponent[] memory claims = new BatchClaimComponent[](commitmentsCount);
@@ -672,6 +670,7 @@ library Message {
      * @notice Decodes a batch of claim hashes with scaling factors from BATCH_POST message payload
      * @dev Inverse of encodeBatchPost()
      * @dev Decodes dual bitmap format and expands to flat arrays
+     * @dev No bounds checking - message integrity guaranteed by VAA verification and sender validation
      * @param message Encoded message bytes
      * @return claimants Array of claimants (one per claim)
      * @return claimHashes Array of claim hashes
@@ -682,8 +681,6 @@ library Message {
         pure
         returns (bytes32[] memory claimants, bytes32[] memory claimHashes, uint256[] memory scalingFactors)
     {
-        require(message.length >= 32, "message too short");
-
         uint16 itemCount;
         uint256 changeClaimantsBitmap;
         uint256 scalingFactorsBitmap;
@@ -794,12 +791,11 @@ library Message {
     /**
      * @notice Decodes a batch of BatchClaim from BATCH_SEND message payload
      * @dev Inverse of encodeBatchSend()
+     * @dev No bounds checking - message integrity guaranteed by VAA verification and sender validation
      * @param message The encoded message bytes from wormholeRelayer.sendPayloadToEvm()
      * @return claims Array of BatchClaim structs
      */
     function decodeBatchSend(bytes calldata message) internal pure returns (BatchClaim[] memory claims) {
-        require(message.length >= 32, "message too short");
-
         uint256 count;
         assembly ("memory-safe") {
             count := calldataload(message.offset)
@@ -810,15 +806,11 @@ library Message {
         uint256 offset = 32;
         unchecked {
             for (uint256 i = 0; i < count; ++i) {
-                require(message.length >= offset + 32, "message too short for length");
-
                 uint256 msgLength;
                 assembly ("memory-safe") {
                     msgLength := calldataload(add(message.offset, offset))
                 }
                 offset += 32;
-
-                require(message.length >= offset + msgLength, "message too short for payload");
 
                 // Extract the message slice and decode using custom decode()
                 bytes calldata msgSlice = message[offset:offset + msgLength];

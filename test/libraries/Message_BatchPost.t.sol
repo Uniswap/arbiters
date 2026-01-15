@@ -543,14 +543,6 @@ contract MessageBatchPostTest is Test {
         wrapper.encodeBatchPost(claimants, claimHashes, scalingFactors);
     }
 
-    /// @notice Test decode reverts on message too short
-    function test_batchPost_decode_revertsOnMessageTooShort() public {
-        bytes memory tooShort = new bytes(16); // Less than 32 bytes (header size)
-
-        vm.expectRevert("message too short");
-        wrapper.decodeBatchPost(tooShort);
-    }
-
     /// @notice Test round trip with exactly 120 items (max batch size)
     function test_batchPost_roundTrip_maxBatchSize() public view {
         uint256 count = 100; // Reduce to 100 to stay well within bitmap limits
