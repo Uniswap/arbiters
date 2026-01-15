@@ -61,6 +61,7 @@ contract WormholeArbiterTest is ExecutorTest {
     function createLocks(uint256 n) internal pure returns (Lock[] memory) {
         Lock[] memory locks = new Lock[](n);
         for (uint256 i = 0; i < n; i++) {
+            /// forge-lint: disable-next-item(unsafe-typecast)
             locks[i] = Lock({
                 lockTag: bytes12(uint96(0x123456789ABC + i)), token: address(uint160(i + 1)), amount: (i + 1) * 1000e18
             });
@@ -74,6 +75,7 @@ contract WormholeArbiterTest is ExecutorTest {
         pure
         returns (BatchClaimWithLocks memory)
     {
+        /// forge-lint: disable-next-item(unsafe-typecast)
         return BatchClaimWithLocks({
             sponsor: address(uint160(SPONSOR) + uint160(index)),
             nonce: NONCE + index,
