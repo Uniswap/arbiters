@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 import {MockTheCompact} from "test/mocks/MockTheCompact.sol";
 import {TribunalMock} from "test/mocks/TribunalMock.sol";
 import {WormholeArbiter} from "src/WormholeArbiter.sol";
+import {BaseArbiter} from "src/abstracts/BaseArbiter.sol";
 import {IWormholeArbiter} from "src/interfaces/IWormholeArbiter.sol";
 import {QuoteLib} from "lib/wormhole-solidity-sdk/src/testing/ExecutorTest.sol";
 import {WormholeParams, BatchSend, BatchClaimWithLocks} from "src/wormhole/WormholeTypes.sol";
@@ -236,11 +237,10 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // deploy wormhole arbiter + etch tribunal with TribunalMock on Arb
         wormholeArbiterArbitrum = new WormholeArbiter{salt: salt}();
-        // forge-lint: disable-next-line(mixed-case-variable)
-        address TRIBUNAL_ADDRESS = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        address tribunalAddress = address(wormholeArbiterArbitrum.TRIBUNAL());
         TribunalMock arbitrumTribunalMock = new TribunalMock();
-        vm.etch(TRIBUNAL_ADDRESS, address(arbitrumTribunalMock).code);
-        tribunalMockArbitrum = TribunalMock(TRIBUNAL_ADDRESS);
+        vm.etch(tribunalAddress, address(arbitrumTribunalMock).code);
+        tribunalMockArbitrum = TribunalMock(tribunalAddress);
 
         // get quote cost (throwaway gas price for now)
         (quote, quoteCost) = craftSignedQuote(CHAIN_ID_BASE, GAS_LIMIT);
@@ -250,8 +250,8 @@ contract WormholeArbiterTest is ExecutorTest {
         // deploy wormhole arbiter + etch tribunal with TribunalMock
         wormholeArbiterBase = new WormholeArbiter{salt: salt}();
         TribunalMock baseTribunalMock = new TribunalMock();
-        vm.etch(TRIBUNAL_ADDRESS, address(baseTribunalMock).code);
-        tribunalMockBase = TribunalMock(TRIBUNAL_ADDRESS);
+        vm.etch(tribunalAddress, address(baseTribunalMock).code);
+        tribunalMockBase = TribunalMock(tribunalAddress);
 
         // deploy the compact mock
         MockTheCompact deployedCompactMock = new MockTheCompact();
@@ -1575,9 +1575,9 @@ contract WormholeArbiterTest is ExecutorTest {
             filler
         );
 
-        // Call arbiter directly, pranking as TRIBUNAL_ADDRESS to pass UnauthorizedCaller check
+        // Call arbiter directly, pranking as TRIBUNAL to pass UnauthorizedCaller check
         // Should revert with InvalidArbiter because compact.arbiter != address(WormholeArbiter)
-        address tribunalAddr = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        address tribunalAddr = address(wormholeArbiterArbitrum.TRIBUNAL());
         vm.deal(tribunalAddr, quoteCost);
         vm.prank(tribunalAddr);
         vm.expectRevert(IWormholeArbiter.InvalidArbiter.selector);
@@ -1604,7 +1604,7 @@ contract WormholeArbiterTest is ExecutorTest {
         // Empty context should revert with ContextTooShort
         bytes memory context = "";
 
-        address tribunalAddr = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        address tribunalAddr = address(wormholeArbiterArbitrum.TRIBUNAL());
         vm.deal(tribunalAddr, quoteCost);
         vm.prank(tribunalAddr);
         vm.expectRevert(IWormholeArbiter.ContextTooShort.selector);
@@ -1712,7 +1712,7 @@ contract WormholeArbiterTest is ExecutorTest {
         // Don't call tribunalMockArbitrum.setFilled() - claim is not filled
 
         vm.prank(filler);
-        vm.expectRevert("Claim not filled in Tribunal");
+        vm.expectRevert(BaseArbiter.ClaimNotFilled.selector);
         wormholeArbiterArbitrum.send{
             value: quoteCost
         }(
@@ -1816,7 +1816,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
 
         vm.prank(filler);
-        vm.expectRevert("Claim not filled in Tribunal");
+        vm.expectRevert(BaseArbiter.ClaimNotFilled.selector);
         wormholeArbiterArbitrum.batchSend{value: quoteCost}(batch);
     }
 
@@ -1891,7 +1891,7 @@ contract WormholeArbiterTest is ExecutorTest {
         });
 
         vm.prank(filler);
-        vm.expectRevert("Claim not filled in Tribunal");
+        vm.expectRevert(BaseArbiter.ClaimNotFilled.selector);
         wormholeArbiterArbitrum.multichainBatchSend{value: quoteCost * 2}(batches);
     }
 
@@ -1919,7 +1919,7 @@ contract WormholeArbiterTest is ExecutorTest {
 
         // Try to deliver this VAA to the REAL arbiter - it should reject because
         // emitter address (fakeEmitter) != address(wormholeArbiterBase)
-        vm.expectRevert("Message not from corresponding arbiter");
+        vm.expectRevert(BaseArbiter.InvalidMessageSender.selector);
         wormholeArbiterBase.executeVAAv1(encodedVaa);
     }
 

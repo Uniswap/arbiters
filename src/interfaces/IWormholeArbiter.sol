@@ -54,9 +54,6 @@ interface IWormholeArbiter {
     /// @notice Thrown when batch contains more than 120 claims
     error TooManyClaims();
 
-    /// @notice Thrown when claim hash not found in Tribunal.filled()
-    error ClaimNotFilled();
-
     /// @notice Thrown when contract balance insufficient for Wormhole message fee
     error InsufficientFee();
 

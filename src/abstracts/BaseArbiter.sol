@@ -17,14 +17,17 @@ import {LOCK_TYPEHASH} from "the-compact/src/types/EIP712Types.sol";
 abstract contract BaseArbiter {
     using FixedPointMathLib for uint256;
 
-    address public constant TRIBUNAL_ADDRESS = 0x000000000000790009689f43bAedb61D67D45bB8;
-    ITheCompactClaims public immutable THE_COMPACT = ITheCompactClaims(0x00000000000000171ede64904551eeDF3C6C9788);
-    ITribunal public immutable TRIBUNAL = ITribunal(TRIBUNAL_ADDRESS);
-    uint256 public immutable BASE_SCALING_FACTOR = 1e18;
+    ITheCompactClaims public constant THE_COMPACT = ITheCompactClaims(0x00000000000000171ede64904551eeDF3C6C9788);
+    ITribunal public constant TRIBUNAL = ITribunal(0x000000000000790009689f43bAedb61D67D45bB8);
+    uint256 public constant BASE_SCALING_FACTOR = 1e18;
+
+    error InvalidMessageSender();
+    error EthRefundFailed();
+    error ClaimNotFilled();
 
     /// @dev Validates emitter matches this contract (deterministic deployment)
     function _validateMessageSender(address emitter) internal view {
-        require(emitter == address(this), "Message not from corresponding arbiter");
+        if (emitter != address(this)) revert InvalidMessageSender();
     }
 
     /// @dev Refunds entire contract balance to msg.sender after function execution
@@ -38,21 +41,20 @@ abstract contract BaseArbiter {
         uint256 toRefund = address(this).balance;
         if (toRefund > 0) {
             (bool success,) = msg.sender.call{value: toRefund}("");
-            require(success, "ETH refund failed");
+            if (!success) revert EthRefundFailed();
         }
     }
 
     /// @dev Submits BatchClaim to THE_COMPACT.batchClaim()
     function _sendClaim(BatchClaim memory claimPayload) internal virtual returns (bytes32 claimHash) {
         claimHash = THE_COMPACT.batchClaim(claimPayload);
-        return claimHash;
     }
 
     // ======== Claim Hash Helpers ========
 
-    /// @dev Public wrapper for _deriveClaimHash (for off-chain use)
+    /// @dev External wrapper for _deriveClaimHash (for off-chain use)
     function deriveClaimHash(address sponsor, uint256 nonce, uint256 expires, bytes32 witness, Lock[] calldata locks)
-        public
+        external
         view
         returns (bytes32)
     {
@@ -101,10 +103,9 @@ abstract contract BaseArbiter {
 
         // 2. Verify claim has been filled in Tribunal
         claimant = TRIBUNAL.filled(claimHash);
-        require(claimant != bytes32(0), "Claim not filled in Tribunal");
+        if (claimant == bytes32(0)) revert ClaimNotFilled();
 
         // 3. Get the claim reduction scaling factor
         claimReductionScalingFactor = TRIBUNAL.claimReductionScalingFactor(claimHash);
-        return (claimHash, claimant, claimReductionScalingFactor);
     }
 }

@@ -69,7 +69,7 @@ contract BaseArbiterTest is Test {
     function setUp() public {
         // Deploy the testable arbiter first to get tribunalAddress
         arbiter = new TestableBaseArbiter();
-        tribunalAddress = arbiter.TRIBUNAL_ADDRESS();
+        tribunalAddress = address(arbiter.TRIBUNAL());
 
         // Deploy TribunalMock and etch it to the expected address
         TribunalMock mockTribunal = new TribunalMock();
@@ -178,7 +178,7 @@ contract BaseArbiterTest is Test {
     // Test 5: _validateMessageSender reverts when emitter doesn't match
     function test_validateMessageSender_revert() public {
         address wrongEmitter = address(0x1234);
-        vm.expectRevert("Message not from corresponding arbiter");
+        vm.expectRevert(BaseArbiter.InvalidMessageSender.selector);
         arbiter.validateMessageSender(wrongEmitter);
     }
 
@@ -299,7 +299,7 @@ contract BaseArbiterTest is Test {
 
         // Don't set the claim as filled in tribunal mock (defaults to bytes32(0))
 
-        vm.expectRevert("Claim not filled in Tribunal");
+        vm.expectRevert(BaseArbiter.ClaimNotFilled.selector);
         arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
     }
 

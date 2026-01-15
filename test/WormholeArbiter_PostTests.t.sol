@@ -4,6 +4,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {MockTheCompact} from "test/mocks/MockTheCompact.sol";
 import {TribunalMock} from "test/mocks/TribunalMock.sol";
 import {WormholeArbiter} from "src/WormholeArbiter.sol";
+import {BaseArbiter} from "src/abstracts/BaseArbiter.sol";
 import {BatchClaimWithLocks, BatchPost} from "src/wormhole/WormholeTypes.sol";
 
 import {Lock, BatchCompact} from "the-compact/src/types/EIP712Types.sol";
@@ -280,15 +281,14 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         filler = makeAddr("filler");
         vm.deal(filler, 5 ether); // Fund it
 
-        // Deploy WormholeArbiter at deterministic address first to get TRIBUNAL_ADDRESS
+        // Deploy WormholeArbiter at deterministic address first to get TRIBUNAL address
         wormholeArbiterArbitrum = new WormholeArbiter{salt: salt}();
-        // forge-lint: disable-next-line(mixed-case-variable)
-        address TRIBUNAL_ADDRESS = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        address tribunalAddress = address(wormholeArbiterArbitrum.TRIBUNAL());
 
-        // Deploy TribunalMock and set its code to TRIBUNAL_ADDRESS
+        // Deploy TribunalMock and set its code to tribunalAddress
         TribunalMock arbitrumTribunalMock = new TribunalMock();
-        vm.etch(TRIBUNAL_ADDRESS, address(arbitrumTribunalMock).code);
-        tribunalMockArbitrum = TribunalMock(TRIBUNAL_ADDRESS);
+        vm.etch(tribunalAddress, address(arbitrumTribunalMock).code);
+        tribunalMockArbitrum = TribunalMock(tribunalAddress);
 
         // --- Deploy Tribunal, MockTheCompact, and WormholeArbiter on Base fork ---
         selectFork(CHAIN_ID_BASE);
@@ -297,13 +297,13 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         filler = makeAddr("filler");
         vm.deal(filler, 5 ether); // Fund it
 
-        // Deploy WormholeArbiter at deterministic address (same TRIBUNAL_ADDRESS)
+        // Deploy WormholeArbiter at deterministic address (same tribunalAddress)
         wormholeArbiterBase = new WormholeArbiter{salt: salt}();
 
-        // Deploy TribunalMock and set its code to TRIBUNAL_ADDRESS
+        // Deploy TribunalMock and set its code to tribunalAddress
         TribunalMock baseTribunalMock = new TribunalMock();
-        vm.etch(TRIBUNAL_ADDRESS, address(baseTribunalMock).code);
-        tribunalMockBase = TribunalMock(TRIBUNAL_ADDRESS);
+        vm.etch(tribunalAddress, address(baseTribunalMock).code);
+        tribunalMockBase = TribunalMock(tribunalAddress);
 
         // deploy the compact mock
         MockTheCompact deployedCompactMock = new MockTheCompact();
@@ -1001,9 +1001,9 @@ contract WormholeArbiterPostTest is WormholeForkTest {
 
         bytes memory context = wormholeArbiterArbitrum.encodePostContext(ALLOCATOR_DATA, SPONSOR_SIGNATURE);
 
-        // Call arbiter directly, pranking as TRIBUNAL_ADDRESS to pass UnauthorizedCaller check
+        // Call arbiter directly, pranking as TRIBUNAL to pass UnauthorizedCaller check
         // Should revert with InvalidArbiter because compact.arbiter != address(WormholeArbiter)
-        address tribunalAddr = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        address tribunalAddr = address(wormholeArbiterArbitrum.TRIBUNAL());
         vm.prank(tribunalAddr);
         vm.expectRevert(IWormholeArbiter.InvalidArbiter.selector);
         wormholeArbiterArbitrum.dispatchCallback(
@@ -1029,7 +1029,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         // Empty context should revert with ContextTooShort
         bytes memory context = "";
 
-        address tribunalAddr = wormholeArbiterArbitrum.TRIBUNAL_ADDRESS();
+        address tribunalAddr = address(wormholeArbiterArbitrum.TRIBUNAL());
         vm.prank(tribunalAddr);
         vm.expectRevert(IWormholeArbiter.ContextTooShort.selector);
         wormholeArbiterArbitrum.dispatchCallback(
@@ -1071,7 +1071,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         // Don't call tribunalMockArbitrum.setFilled() - claim is not filled
 
         vm.prank(filler);
-        vm.expectRevert("Claim not filled in Tribunal");
+        vm.expectRevert(BaseArbiter.ClaimNotFilled.selector);
         wormholeArbiterArbitrum.post(
             BASE_CHAIN_ID_STANDARD, SPONSOR, NONCE, EXPIRES, WITNESS, locks, ALLOCATOR_DATA, SPONSOR_SIGNATURE
         );
@@ -1159,7 +1159,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         claimHashes[1] = claimHash2;
 
         vm.prank(filler);
-        vm.expectRevert(IWormholeArbiter.ClaimNotFilled.selector);
+        vm.expectRevert(BaseArbiter.ClaimNotFilled.selector);
         wormholeArbiterArbitrum.batchPost(BASE_CHAIN_ID_STANDARD, claimHashes);
     }
 
@@ -1220,7 +1220,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
             BatchPost({chainId: BASE_CHAIN_ID_STANDARD, claimHashes: claimHashes2, scalingFactors: new uint256[](0)});
 
         vm.prank(filler);
-        vm.expectRevert(IWormholeArbiter.ClaimNotFilled.selector);
+        vm.expectRevert(BaseArbiter.ClaimNotFilled.selector);
         wormholeArbiterArbitrum.multichainBatchPost(batches);
     }
 
@@ -1246,7 +1246,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         bytes memory encodedVaa = coreBridge().craftVaa(wormholeArbitrumChainId, fakeEmitterAddress, payload);
 
         // Should reject because emitter address != address(wormholeArbiterBase)
-        vm.expectRevert("Message not from corresponding arbiter");
+        vm.expectRevert(BaseArbiter.InvalidMessageSender.selector);
         wormholeArbiterBase.receivePost(encodedVaa);
     }
 
@@ -1824,7 +1824,7 @@ contract WormholeArbiterPostTest is WormholeForkTest {
         bytes[] memory vaas = new bytes[](1);
         vaas[0] = encodedVaa;
 
-        vm.expectRevert("Message not from corresponding arbiter");
+        vm.expectRevert(BaseArbiter.InvalidMessageSender.selector);
         wormholeArbiterBase.receivePosts(vaas);
     }
 
