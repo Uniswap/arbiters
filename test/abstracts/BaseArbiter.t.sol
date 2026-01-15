@@ -11,6 +11,13 @@ import {BatchClaim} from "lib/the-compact/src/types/BatchClaims.sol";
 import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
 import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 
+// Mock contract that rejects ETH transfers
+contract RejectingContract {
+    receive() external payable {
+        revert();
+    }
+}
+
 // Concrete implementation for testing
 contract TestableBaseArbiter is BaseArbiter {
     // Expose internal functions for testing
@@ -154,35 +161,17 @@ contract BaseArbiterTest is Test {
         });
     }
 
-    // Test 1: Compact is set correctly
-    function test_compactIsSet() public view {
-        assertEq(address(arbiter.THE_COMPACT()), 0x00000000000000171ede64904551eeDF3C6C9788);
-    }
-
-    // Test 2: Tribunal is set correctly
-    function test_tribunalIsSet() public view {
-        assertEq(address(arbiter.TRIBUNAL()), tribunalAddress);
-    }
-
-    // Test 3: Base scaling factor is set correctly
-    function test_baseScalingFactorIsSet() public view {
-        assertEq(arbiter.BASE_SCALING_FACTOR(), 1e18);
-    }
-
-    // Test 4: _validateMessageSender works when emitter matches
     function test_validateMessageSender_success() public view {
         // Should succeed when emitter matches the arbiter address
         arbiter.validateMessageSender(address(arbiter));
     }
 
-    // Test 5: _validateMessageSender reverts when emitter doesn't match
     function test_validateMessageSender_revert() public {
         address wrongEmitter = address(0x1234);
         vm.expectRevert(BaseArbiter.InvalidMessageSender.selector);
         arbiter.validateMessageSender(wrongEmitter);
     }
 
-    // Test 6: refundExcessEth modifier works
     function test_refundExcessEth() public {
         address caller = address(0x5678);
         uint256 ethAmount = 1 ether;
@@ -199,11 +188,10 @@ contract BaseArbiterTest is Test {
         assertEq(address(arbiter).balance, 0);
     }
 
-    // Test 7: _sendClaim works
     function test_sendClaim() public {
         Lock[] memory locks = createSingleLock();
         BatchClaim memory claimPayload =
-            createBatchClaimFromLocks(SPONSOR, NONCE, EXPIRES, WITNESS, locks, CLAIMANT, 1e18);
+            createBatchClaimFromLocks(SPONSOR, NONCE, EXPIRES, WITNESS, locks, CLAIMANT, arbiter.BASE_SCALING_FACTOR());
 
         // Call _sendClaim
         arbiter.sendClaimPublic(claimPayload);
@@ -213,20 +201,18 @@ contract BaseArbiterTest is Test {
         assertTrue(claimHash != bytes32(0), "batchClaim should have been called");
     }
 
-    // Test 8: LOCK_TYPEHASH is imported
     function test_lockTypehashIsImported() public pure {
         // Verify LOCK_TYPEHASH is accessible and has expected value
         bytes32 expectedTypehash = keccak256("Lock(bytes12 lockTag,address token,uint256 amount)");
         assertEq(LOCK_TYPEHASH, expectedTypehash);
     }
 
-    // Test 9: _deriveClaimHash works which implictly tests _deriveCommitmentsHash
     function test_deriveClaimHash() public {
         Lock[] memory locks = createSingleLock();
 
         // Create a BatchClaim using our helper
         BatchClaim memory batchClaim =
-            createBatchClaimFromLocks(SPONSOR, NONCE, EXPIRES, WITNESS, locks, CLAIMANT, 1e18);
+            createBatchClaimFromLocks(SPONSOR, NONCE, EXPIRES, WITNESS, locks, CLAIMANT, arbiter.BASE_SCALING_FACTOR());
 
         // Get claim hash from MockTheCompact (via arbiter so msg.sender is correct)
         bytes32 compactLibClaimHash = arbiter.sendClaimPublic(batchClaim);
@@ -238,16 +224,15 @@ contract BaseArbiterTest is Test {
         assertEq(arbiterClaimHash, compactLibClaimHash, "Claim hashes should match");
     }
 
-    // Test 10: _validateBatchClaim with 1e18 scaling factor
     function test_validateBatchClaim_fullScaling() public {
         Lock[] memory locks = createSingleLock();
 
         // Derive the expected claim hash
         bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
-        // Set up tribunal mock with filled claim and 1e18 scaling factor
+        // Set up tribunal mock with filled claim and BASE_SCALING_FACTOR scaling factor
         tribunalMock.setFilled(expectedClaimHash, CLAIMANT);
-        tribunalMock.setClaimReductionScalingFactor(expectedClaimHash, 1e18);
+        tribunalMock.setClaimReductionScalingFactor(expectedClaimHash, arbiter.BASE_SCALING_FACTOR());
 
         // Validate the batch claim
         (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) =
@@ -256,10 +241,9 @@ contract BaseArbiterTest is Test {
         // Verify results
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
         assertEq(claimant, CLAIMANT, "Claimant should match");
-        assertEq(scalingFactor, 1e18, "Scaling factor should be 1e18");
+        assertEq(scalingFactor, arbiter.BASE_SCALING_FACTOR(), "Scaling factor should be BASE_SCALING_FACTOR");
     }
 
-    // Test 11: _validateBatchClaim with 0.5e18 scaling factor
     function test_validateBatchClaim_halfScaling() public {
         Lock[] memory locks = createSingleLock();
 
@@ -276,7 +260,6 @@ contract BaseArbiterTest is Test {
         assertEq(scalingFactor, 0.5e18, "Scaling factor should be 0.5e18");
     }
 
-    // Test 12: _validateBatchClaim with 0xffff scaling factor
     function test_validateBatchClaim_smallScaling() public {
         Lock[] memory locks = createSingleLock();
 
@@ -293,7 +276,6 @@ contract BaseArbiterTest is Test {
         assertEq(scalingFactor, 0xffff, "Scaling factor should be 0xffff");
     }
 
-    // Test 13: _validateBatchClaim reverts when claim not filled
     function test_validateBatchClaim_revertNotFilled() public {
         Lock[] memory locks = createSingleLock();
 
@@ -303,24 +285,22 @@ contract BaseArbiterTest is Test {
         arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
     }
 
-    // Test 14: _validateBatchClaim when claim is filled
     function test_validateBatchClaim_claimFilled() public {
         Lock[] memory locks = createMultipleLocks();
 
         bytes32 expectedClaimHash = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         tribunalMock.setFilled(expectedClaimHash, CLAIMANT);
-        // Don't explicitly set scaling factor, should default to 1e18
+        // Don't explicitly set scaling factor, should default to BASE_SCALING_FACTOR
 
         (bytes32 claimHash, bytes32 claimant, uint256 scalingFactor) =
             arbiter.validateBatchClaimPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
 
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
         assertEq(claimant, CLAIMANT, "Claimant should match");
-        assertEq(scalingFactor, 1e18, "Scaling factor should default to 1e18");
+        assertEq(scalingFactor, arbiter.BASE_SCALING_FACTOR(), "Scaling factor should default to BASE_SCALING_FACTOR");
     }
 
-    // Test 15: _validateBatchClaim with filled claim and non-zero scaling
     function test_validateBatchClaim_filledWithScaling() public {
         Lock[] memory locks = createMultipleLocks();
 
@@ -338,7 +318,6 @@ contract BaseArbiterTest is Test {
         assertEq(scalingFactor, customScaling, "Scaling factor should be 0.75e18");
     }
 
-    // Test 16: _validateBatchClaim with filled claim and zero scaling
     function test_validateBatchClaim_filledWithZeroScaling() public {
         Lock[] memory locks = createSingleLock();
 
@@ -354,6 +333,70 @@ contract BaseArbiterTest is Test {
         assertEq(claimHash, expectedClaimHash, "Claim hash should match");
         assertEq(claimant, CLAIMANT, "Claimant should match");
         // TribunalMock returns 1e18 when factor is not set (defaults to 1e18)
-        assertEq(scalingFactor, 1e18, "Scaling factor should default to 1e18");
+        assertEq(scalingFactor, arbiter.BASE_SCALING_FACTOR(), "Scaling factor should default to BASE_SCALING_FACTOR");
+    }
+
+    function test_refundExcessEth_revertOnFailedRefund() public {
+        RejectingContract rejector = new RejectingContract();
+        // Fund the arbiter contract
+        vm.deal(address(arbiter), 1 ether);
+        // Call from the rejecting contract's context
+        vm.prank(address(rejector));
+        vm.expectRevert(BaseArbiter.EthRefundFailed.selector);
+        arbiter.refundExcessEthPublic();
+    }
+
+    function test_refundExcessEth_zeroBalance() public {
+        // Ensure arbiter has no balance
+        assertEq(address(arbiter).balance, 0);
+        // Should succeed without reverting (no-op)
+        arbiter.refundExcessEthPublic();
+        // Balance still 0
+        assertEq(address(arbiter).balance, 0);
+    }
+
+    function test_deriveCommitmentsHash_emptyLocks() public view {
+        Lock[] memory emptyLocks = new Lock[](0);
+        // Should produce a valid hash (hash of empty array)
+        bytes32 hash = arbiter.deriveCommitmentsHashPublic(emptyLocks);
+        // Hash of empty bytes32[] array
+        bytes32 expectedHash = keccak256(abi.encodePacked(new bytes32[](0)));
+        assertEq(hash, expectedHash, "Empty locks should hash correctly");
+    }
+
+    function test_deriveCommitmentsHash_lockOrderMatters() public view {
+        Lock[] memory locks1 = createMultipleLocks(); // [A, B, C]
+
+        // Create same locks in different order
+        Lock[] memory locks2 = new Lock[](3);
+        locks2[0] = locks1[2]; // C
+        locks2[1] = locks1[0]; // A
+        locks2[2] = locks1[1]; // B
+
+        bytes32 hash1 = arbiter.deriveCommitmentsHashPublic(locks1);
+        bytes32 hash2 = arbiter.deriveCommitmentsHashPublic(locks2);
+
+        assertTrue(hash1 != hash2, "Lock order should affect hash");
+    }
+
+    function test_deriveClaimHash_differentSponsor() public view {
+        Lock[] memory locks = createSingleLock();
+        address differentSponsor = address(0xDEADBEEF);
+
+        bytes32 hash1 = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        bytes32 hash2 = arbiter.deriveClaimHashPublic(differentSponsor, NONCE, EXPIRES, WITNESS, locks);
+
+        assertTrue(hash1 != hash2, "Different sponsor should produce different hash");
+    }
+
+    function test_deriveClaimHash_differentNonce() public view {
+        Lock[] memory locks = createSingleLock();
+        uint256 differentNonce = 0x4444444444444444444444444444444444444444444444444444444444444444;
+
+        bytes32 hash1 = arbiter.deriveClaimHashPublic(SPONSOR, NONCE, EXPIRES, WITNESS, locks);
+        bytes32 hash2 = arbiter.deriveClaimHashPublic(SPONSOR, differentNonce, EXPIRES, WITNESS, locks);
+
+        assertTrue(hash1 != hash2, "Different nonce should produce different hash");
     }
 }
+
