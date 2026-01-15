@@ -29,13 +29,13 @@ interface IWormholeArbiter {
     /// @param chainId The destination chain ID
     /// @param claimHashes Array of claim hashes being relayed
     /// @param sequence The Wormhole sequence number for tracking
-    event BatchSendEvent(uint256 indexed chainId, bytes32[] indexed claimHashes, uint64 indexed sequence);
+    event BatchSendEvent(uint256 indexed chainId, bytes32[] claimHashes, uint64 indexed sequence);
 
     /// @notice Emitted when a batch of claim hashes is posted via core
     /// @param chainId The destination chain ID
     /// @param claimHashes Array of claim hashes being relayed
     /// @param sequence The Wormhole sequence number for fetching VAA
-    event BatchPostEvent(uint256 indexed chainId, bytes32[] indexed claimHashes, uint64 indexed sequence);
+    event BatchPostEvent(uint256 indexed chainId, bytes32[] claimHashes, uint64 indexed sequence);
 
     // ======== Custom Errors ========
 

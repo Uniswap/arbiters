@@ -81,7 +81,7 @@ abstract contract BaseArbiter {
         bytes32[] memory lockHashes = new bytes32[](locks.length);
         unchecked {
             for (uint256 i = 0; i < locks.length; ++i) {
-                // Hash each lock directly (no extraction needed)
+                // Hash each lock directly
                 lockHashes[i] = keccak256(abi.encode(LOCK_TYPEHASH, locks[i].lockTag, locks[i].token, locks[i].amount));
             }
         }
