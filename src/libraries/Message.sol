@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import {BatchClaimComponent, Component} from "the-compact/src/types/Components.sol";
 import {Lock} from "the-compact/src/types/EIP712Types.sol";
-import {BatchClaim} from "lib/the-compact/src/types/BatchClaims.sol";
+import {BatchClaim} from "the-compact/src/types/BatchClaims.sol";
 import {BatchClaimWithLocks, WormholeParams} from "../wormhole/WormholeTypes.sol";
 import {WITNESS_TYPESTRING} from "tribunal/types/TribunalTypeHashes.sol";
 
@@ -52,6 +52,9 @@ library Message {
     /// @dev Header length for batch messages
     uint256 constant BATCH_HEADER_LENGTH = 32;
 
+    /// @dev Default scaling factor representing 100% (no reduction)
+    uint256 constant DEFAULT_SCALING_FACTOR = 1e18;
+
     // ============ Errors ============
 
     error AllocatorDataTooLong();
@@ -84,6 +87,11 @@ library Message {
         }
     }
 
+    /// @dev Calculates size including 2-byte length prefix if data is present
+    function _sizeWithPrefix(uint256 len) private pure returns (uint256) {
+        return len > 0 ? len + 2 : 0;
+    }
+
     // ============ Encoding Functions ============
 
     /**
@@ -108,9 +116,8 @@ library Message {
         uint8 flags = _validateAndSetSignatureFlags(allocatorData.length, sponsorSignature.length) | IS_SEND;
 
         // Calculate total size: 1 (flags) + allocatorData + sponsorSignature + 16 (gasLimit) + 32 (totalCost) + 20 (refundAddress) + signedQuote.length
-        // Each signature includes 2-byte length prefix when present
-        uint256 allocatorSize = allocatorData.length > 0 ? allocatorData.length + 2 : 0;
-        uint256 sponsorSize = sponsorSignature.length > 0 ? sponsorSignature.length + 2 : 0;
+        uint256 allocatorSize = _sizeWithPrefix(allocatorData.length);
+        uint256 sponsorSize = _sizeWithPrefix(sponsorSignature.length);
         uint256 totalSize = 1 + allocatorSize + sponsorSize + 16 + 32 + 20 + signedQuote.length;
         bytes memory result = new bytes(totalSize);
 
@@ -257,9 +264,8 @@ library Message {
         uint8 flags = _validateAndSetSignatureFlags(allocatorData.length, sponsorSignature.length);
 
         // Calculate total size: 1 (flags) + allocatorData + sponsorSignature
-        // Each signature includes 2-byte length prefix when present
-        uint256 allocatorSize = allocatorData.length > 0 ? allocatorData.length + 2 : 0;
-        uint256 sponsorSize = sponsorSignature.length > 0 ? sponsorSignature.length + 2 : 0;
+        uint256 allocatorSize = _sizeWithPrefix(allocatorData.length);
+        uint256 sponsorSize = _sizeWithPrefix(sponsorSignature.length);
         uint256 totalSize = 1 + allocatorSize + sponsorSize;
         bytes memory result = new bytes(totalSize);
 
@@ -375,15 +381,14 @@ library Message {
         uint8 flags = _validateAndSetSignatureFlags(allocatorData.length, sponsorSignature.length);
 
         uint256 scalingFactorSize = 0;
-        if (claimReductionScalingFactor != 1e18) {
+        if (claimReductionScalingFactor != DEFAULT_SCALING_FACTOR) {
             flags |= HAS_CLAIM_REDUCTION;
             scalingFactorSize = 32;
         }
 
         // Calculate total size
-        // Each signature includes 2-byte length prefix when present
-        uint256 allocatorSize = allocatorData.length > 0 ? allocatorData.length + 2 : 0;
-        uint256 sponsorSize = sponsorSignature.length > 0 ? sponsorSignature.length + 2 : 0;
+        uint256 allocatorSize = _sizeWithPrefix(allocatorData.length);
+        uint256 sponsorSize = _sizeWithPrefix(sponsorSignature.length);
         uint256 totalSize =
             FIXED_HEADER_LENGTH + allocatorSize + sponsorSize + scalingFactorSize
             + (commitments.length * COMMITMENT_LENGTH);
@@ -525,7 +530,7 @@ library Message {
             }
             offset += 32;
         } else {
-            claimReductionScalingFactor = 1e18;
+            claimReductionScalingFactor = DEFAULT_SCALING_FACTOR;
         }
 
         // Decode commitments and transform to BatchClaimComponents
@@ -563,8 +568,9 @@ library Message {
                     portions = new Component[](0);
                 } else {
                     // Calculate scaled amount for component
-                    uint256 scaledAmount =
-                        claimReductionScalingFactor == 1e18 ? amount : ((amount * claimReductionScalingFactor) / 1e18);
+                    uint256 scaledAmount = claimReductionScalingFactor == DEFAULT_SCALING_FACTOR
+                        ? amount
+                        : ((amount * claimReductionScalingFactor) / DEFAULT_SCALING_FACTOR);
 
                     // Create single Component portion
                     portions = new Component[](1);
@@ -632,8 +638,8 @@ library Message {
                     changeClaimantsBitmap |= (1 << i);
                     claimantCount++;
                 }
-                // Check if scaling factor != 1e18
-                if (scalingFactors[i] != 1e18) {
+                // Check if scaling factor != DEFAULT_SCALING_FACTOR
+                if (scalingFactors[i] != DEFAULT_SCALING_FACTOR) {
                     // advanced bitmap encoding scheme
                     // forge-lint: disable-next-line(incorrect-shift)
                     scalingFactorsBitmap |= (1 << i);
@@ -742,7 +748,6 @@ library Message {
             let claimantsPtr := add(claimants, 32)
             let hashesPtr := add(claimHashes, 32)
             let factorsPtr := add(scalingFactors, 32)
-            let BASE_SCALING := 1000000000000000000 // 1e18
 
             let currentClaimant := 0
 
@@ -765,7 +770,7 @@ library Message {
 
             // Read scaling factors and expand using scalingFactors bitmap
             for { let i := 0 } lt(i, itemCount) { i := add(i, 1) } {
-                let factor := BASE_SCALING // Default to 1e18
+                let factor := DEFAULT_SCALING_FACTOR
                 if and(shr(i, scalingFactorsBitmap), 1) {
                     // Bit is set - read scaling factor from message
                     factor := mload(ptr)
