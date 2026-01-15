@@ -78,12 +78,16 @@ abstract contract ExecutorSendImpl is ExecutorSharedBase {
 }
 
 abstract contract ExecutorReceiveImpl is ExecutorSharedBase, IVaaV1Receiver {
+    // DEVIATION: Custom error added (not in original Wormhole SDK)
+    error UnexpectedMsgValue();
+
     constructor(address coreBridge) {}
 
     //default impl as safeguard - integrators should override this with an empty impl and perform
     //  appropriate check in their impl of _executeVaa instead, if they allow for non-zero msg.value
     function _executeVaaDefaultMsgValueCheck() internal virtual {
-        require(msg.value == 0);
+        // DEVIATION: Replaced require() with custom error (not in original Wormhole SDK)
+        if (msg.value != 0) revert UnexpectedMsgValue();
     }
 
     //WARNING: must correctly handle non-zero msg.value (since invoking function is payable)
