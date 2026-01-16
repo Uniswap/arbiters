@@ -305,6 +305,8 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
     }
 
     /// @inheritdoc IWormholeArbiter
+    /// @dev Uses optimistic verification: TheCompact already returns the claim hash when processing,
+    ///      so we verify via return value instead of expensive hash derivation
     function receiveBatchPost(bytes calldata encodedVaa, BatchClaimWithLocks[] calldata claims) external virtual {
         bytes calldata payload = _parseAndValidateVaa(encodedVaa, MessagePackingType.BATCH_POST);
         (bytes32[] memory claimants, bytes32[] memory claimHashes, uint256[] memory scalingFactors) =
@@ -313,12 +315,6 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
         if (claims.length != claimants.length) revert ClaimsArrayLengthMismatch();
 
         for (uint256 i = 0; i < claimants.length; i++) {
-            if (
-                _deriveClaimHash(
-                        claims[i].sponsor, claims[i].nonce, claims[i].expires, claims[i].witness, claims[i].commitments
-                    ) != claimHashes[i] //validate that the provided claimHash matches the derived claimHash
-            ) revert InvalidClaimHash();
-
             BatchClaim memory claim = BatchClaim({
                 allocatorData: claims[i].allocatorData,
                 sponsorSignature: claims[i].sponsorSignature,
@@ -330,7 +326,9 @@ contract WormholeArbiter is ExecutorSendReceive, IDispatchCallback, IWormholeArb
                 claims: _buildBatchClaimComponents(claims[i].commitments, claimants[i], scalingFactors[i])
             });
 
-            _sendClaim(claim);
+            // Submit and verify via return value - _sendClaim already returns hash
+            bytes32 returnedHash = _sendClaim(claim);
+            if (returnedHash != claimHashes[i]) revert InvalidClaimHash();
         }
     }
 
