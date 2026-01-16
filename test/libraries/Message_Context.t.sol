@@ -51,7 +51,6 @@ contract MessageContextWrapper {
 }
 
 /// @title MessageContextTest
-/// @notice Comprehensive test suite for Message context encoding/decoding functions
 /// @dev Tests encodeSendContext, decodeSendContext, encodePostContext, and decodePostContext
 contract MessageContextTest is Test {
     MessageContextWrapper public wrapper;
@@ -304,6 +303,71 @@ contract MessageContextTest is Test {
         wrapper.decodeSendContext(shortContext);
     }
 
+    /// @notice Test that context with allocator length prefix claiming more bytes than exist reverts
+    function test_decodeSendContext_revertsOnContextTooShortForAllocatorSignature() public {
+        // Context of minimum length (69 bytes) but allocator claims 1000 bytes
+        // Layout: flags(1) + allocLen(2) + remaining(66) - but claims 1000
+        bytes memory malformed = new bytes(69);
+        malformed[0] = 0x05; // HAS_ALLOCATOR_SIG | IS_SEND
+        malformed[1] = 0x03; // High byte of length
+        malformed[2] = 0xE8; // Low byte = 0x03E8 = 1000 (claiming 1000 bytes, but only 66 remain)
+        vm.expectRevert(Message.ContextTooShortForAllocatorSignature.selector);
+        wrapper.decodeSendContext(malformed);
+    }
+
+    /// @notice Test that context truncated after allocator data (when sponsor flag set) reverts
+    function test_decodeSendContext_revertsOnContextTooShortForSponsorLength() public {
+        // Context of minimum length (69 bytes) with allocator consuming most of it
+        // flags(1) + allocLen(2) + allocData(64) = 67, leaves only 2 bytes
+        // Sponsor flag set but no room for sponsor length prefix
+        bytes memory malformed = new bytes(69);
+        malformed[0] = 0x07; // HAS_ALLOCATOR_SIG | HAS_SPONSOR_SIG | IS_SEND
+        malformed[1] = 0x00;
+        malformed[2] = 0x40; // allocator length = 64
+        // After reading 64 bytes of allocator data, offset = 1 + 2 + 64 = 67
+        // Only 2 bytes remain (69 - 67 = 2), exactly enough for sponsor length check
+        // But we need offset + 2 = 69, and context.length = 69, so 69 < 69 is FALSE
+        // Let's use 65 bytes of allocator to make offset = 68, then need 2 more = 70 > 69
+        malformed[2] = 0x41; // allocator length = 65
+        vm.expectRevert(Message.ContextTooShortForSponsorLength.selector);
+        wrapper.decodeSendContext(malformed);
+    }
+
+    /// @notice Test that context with sponsor length prefix claiming more bytes than exist reverts
+    function test_decodeSendContext_revertsOnContextTooShortForSponsorSignature() public {
+        // Context with small allocator, but sponsor claims too many bytes
+        // flags(1) + allocLen(2) + alloc(10) + sponsorLen(2) = 15 bytes used
+        // Remaining 54 bytes, but sponsor claims 100
+        bytes memory malformed = new bytes(69);
+        malformed[0] = 0x07; // HAS_ALLOCATOR_SIG | HAS_SPONSOR_SIG | IS_SEND
+        malformed[1] = 0x00;
+        malformed[2] = 0x0A; // allocator length = 10
+        // offset after allocator = 1 + 2 + 10 = 13
+        malformed[13] = 0x00;
+        malformed[14] = 0x64; // sponsor length = 100 (but only 69 - 15 = 54 bytes remain)
+        vm.expectRevert(Message.ContextTooShortForSponsorSignature.selector);
+        wrapper.decodeSendContext(malformed);
+    }
+
+    /// @notice Test that context truncated before WormholeParams reverts
+    function test_decodeSendContext_revertsOnContextTooShortForWormholeParams() public {
+        // Context with valid signatures but not enough for WormholeParams
+        // flags(1) + allocLen(2) + alloc(10) + sponsorLen(2) + sponsor(10) = 25 bytes for sigs
+        // Need 68 more for WormholeParams (gasLimit(16) + totalCost(32) + refundAddr(20))
+        // So minimum needed = 25 + 68 = 93 bytes, but we provide 69
+        bytes memory malformed = new bytes(69);
+        malformed[0] = 0x07; // HAS_ALLOCATOR_SIG | HAS_SPONSOR_SIG | IS_SEND
+        malformed[1] = 0x00;
+        malformed[2] = 0x0A; // allocator length = 10
+        // offset after allocator = 13
+        malformed[13] = 0x00;
+        malformed[14] = 0x0A; // sponsor length = 10
+        // offset after sponsor = 25
+        // Need 68 more bytes for WormholeParams, but only 69 - 25 = 44 remain
+        vm.expectRevert(Message.ContextTooShortForWormholeParams.selector);
+        wrapper.decodeSendContext(malformed);
+    }
+
     /// @notice Fuzz test: encodeSendContext/decodeSendContext round trip with variable-length signatures
     function testFuzz_sendContext_roundTrip(
         uint16 allocatorSigLength,
@@ -315,7 +379,6 @@ contract MessageContextTest is Test {
         address refundAddress
     ) public view {
         // Bound lengths to reasonable sizes for testing
-        // Testing up to uint16.max would be too expensive for fuzzing
         allocatorSigLength = uint16(bound(allocatorSigLength, 0, 2048));
         sponsorSigLength = uint16(bound(sponsorSigLength, 0, 2048));
         // Signed quote minimum is 68 bytes per Wormhole Executor requirements
@@ -437,6 +500,52 @@ contract MessageContextTest is Test {
 
         vm.expectRevert(Message.ContextHasTrailingData.selector);
         wrapper.decodePostContext(withTrailing);
+    }
+
+    /// @notice Test that post context with allocator flag set but truncated before length prefix reverts
+    function test_decodePostContext_revertsOnContextTooShortForAllocatorLength() public {
+        bytes memory malformed = new bytes(1);
+        malformed[0] = 0x01; // HAS_ALLOCATOR_SIG
+        vm.expectRevert(Message.ContextTooShortForAllocatorLength.selector);
+        wrapper.decodePostContext(malformed);
+    }
+
+    /// @notice Test that post context with allocator length prefix claiming more bytes than exist reverts
+    function test_decodePostContext_revertsOnContextTooShortForAllocatorSignature() public {
+        bytes memory malformed = new bytes(5); // flags(1) + length(2) + 2 bytes (claims 100)
+        malformed[0] = 0x01; // HAS_ALLOCATOR_SIG
+        malformed[1] = 0x00;
+        malformed[2] = 0x64; // length = 100
+        vm.expectRevert(Message.ContextTooShortForAllocatorSignature.selector);
+        wrapper.decodePostContext(malformed);
+    }
+
+    /// @notice Test that post context truncated after allocator data (when sponsor flag set) reverts
+    function test_decodePostContext_revertsOnContextTooShortForSponsorLength() public {
+        bytes memory malformed = new bytes(13); // flags(1) + allocLen(2) + alloc(10)
+        malformed[0] = 0x03; // HAS_ALLOCATOR_SIG | HAS_SPONSOR_SIG
+        malformed[1] = 0x00;
+        malformed[2] = 0x0A; // allocator length = 10
+        for (uint256 i = 0; i < 10; i++) {
+            malformed[3 + i] = bytes1(uint8(i));
+        }
+        vm.expectRevert(Message.ContextTooShortForSponsorLength.selector);
+        wrapper.decodePostContext(malformed);
+    }
+
+    /// @notice Test that post context with sponsor length prefix claiming more bytes than exist reverts
+    function test_decodePostContext_revertsOnContextTooShortForSponsorSignature() public {
+        bytes memory malformed = new bytes(17); // flags(1) + allocLen(2) + alloc(10) + sponsorLen(2) + 2 bytes
+        malformed[0] = 0x03; // HAS_ALLOCATOR_SIG | HAS_SPONSOR_SIG
+        malformed[1] = 0x00;
+        malformed[2] = 0x0A; // allocator length = 10
+        for (uint256 i = 0; i < 10; i++) {
+            malformed[3 + i] = bytes1(uint8(i));
+        }
+        malformed[13] = 0x00;
+        malformed[14] = 0x64; // sponsor length = 100
+        vm.expectRevert(Message.ContextTooShortForSponsorSignature.selector);
+        wrapper.decodePostContext(malformed);
     }
 
     /// @notice Fuzz test: encodePostContext/decodePostContext round trip with variable-length signatures
@@ -583,5 +692,75 @@ contract MessageContextTest is Test {
         // With both: 1 + 2 + 64 + 2 + 64 = 133
         bytes memory encoded4 = wrapper.encodePostContext(ALLOCATOR_SIG, SPONSOR_SIG);
         assertEq(encoded4.length, 133, "with both should be 133");
+    }
+
+    //////////////////////////////////////////////////////////////
+    // BOUNDARY TESTS
+    //////////////////////////////////////////////////////////////
+
+    /// @notice Test encode/decode works at uint16 max boundary for allocator
+    function test_sendContext_roundTrip_maxLengthAllocator() public {
+        WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
+        bytes memory maxAllocator = new bytes(65535);
+        for (uint256 i = 0; i < 65535; i++) {
+            maxAllocator[i] = bytes1(uint8(i % 256));
+        }
+        bytes memory encoded = wrapper.encodeSendContext(maxAllocator, hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
+        (bytes memory decoded,,,,) = wrapper.decodeSendContext(encoded);
+        assertEq(keccak256(decoded), keccak256(maxAllocator), "allocator data mismatch");
+    }
+
+    /// @notice Test encode/decode works at uint16 max boundary for sponsor
+    function test_sendContext_roundTrip_maxLengthSponsor() public {
+        WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
+        bytes memory maxSponsor = new bytes(65535);
+        for (uint256 i = 0; i < 65535; i++) {
+            maxSponsor[i] = bytes1(uint8(i % 256));
+        }
+        bytes memory encoded = wrapper.encodeSendContext(hex"", maxSponsor, params, SIGNED_QUOTE, REFUND_ADDRESS);
+        (, bytes memory decoded,,,) = wrapper.decodeSendContext(encoded);
+        assertEq(keccak256(decoded), keccak256(maxSponsor), "sponsor signature mismatch");
+    }
+
+    /// @notice Test encode/decode works with both signatures at uint16 max length
+    function test_postContext_roundTrip_maxLengthBoth() public {
+        bytes memory maxAllocator = new bytes(65535);
+        bytes memory maxSponsor = new bytes(65535);
+        for (uint256 i = 0; i < 65535; i++) {
+            maxAllocator[i] = bytes1(uint8(i % 256));
+            maxSponsor[i] = bytes1(uint8((i + 128) % 256));
+        }
+        bytes memory encoded = wrapper.encodePostContext(maxAllocator, maxSponsor);
+        (bytes memory decodedAlloc, bytes memory decodedSponsor) = wrapper.decodePostContext(encoded);
+        assertEq(keccak256(decodedAlloc), keccak256(maxAllocator), "allocator data mismatch");
+        assertEq(keccak256(decodedSponsor), keccak256(maxSponsor), "sponsor signature mismatch");
+    }
+
+    //////////////////////////////////////////////////////////////
+    // ZERO VALUE TESTS
+    //////////////////////////////////////////////////////////////
+
+    /// @notice Test encode/decode accepts zero gas limit
+    function test_sendContext_roundTrip_zeroGasLimit() public view {
+        WormholeParams memory params = createWormholeParams(0, TOTAL_COST);
+        bytes memory encoded = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
+        (,, WormholeParams memory decodedParams,,) = wrapper.decodeSendContext(encoded);
+        assertEq(decodedParams.gasLimit, 0, "gas limit should be zero");
+    }
+
+    /// @notice Test encode/decode accepts zero total cost
+    function test_sendContext_roundTrip_zeroTotalCost() public view {
+        WormholeParams memory params = createWormholeParams(GAS_LIMIT, 0);
+        bytes memory encoded = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE, REFUND_ADDRESS);
+        (,, WormholeParams memory decodedParams,,) = wrapper.decodeSendContext(encoded);
+        assertEq(decodedParams.totalCost, 0, "total cost should be zero");
+    }
+
+    /// @notice Test encode/decode accepts address(0) for refund
+    function test_sendContext_roundTrip_zeroRefundAddress() public view {
+        WormholeParams memory params = createWormholeParams(GAS_LIMIT, TOTAL_COST);
+        bytes memory encoded = wrapper.encodeSendContext(hex"", hex"", params, SIGNED_QUOTE, address(0));
+        (,,,, address decodedRefund) = wrapper.decodeSendContext(encoded);
+        assertEq(decodedRefund, address(0), "refund address should be zero");
     }
 }
