@@ -747,4 +747,147 @@ contract MessageTest is Test {
             decoded
         );
     }
+
+    /// @notice Test round trip with locks containing zero values for individual fields
+    function test_roundTrip_lockWithZeroValues() public view {
+        Lock[] memory locks = new Lock[](3);
+
+        // Zero amount
+        locks[0] =
+            Lock({lockTag: bytes12(uint96(1)), token: address(0x1111111111111111111111111111111111111111), amount: 0});
+
+        // Zero token address
+        locks[1] = Lock({lockTag: bytes12(uint96(2)), token: address(0), amount: 1000e18});
+
+        // Zero lockTag
+        locks[2] =
+            Lock({lockTag: bytes12(0), token: address(0x2222222222222222222222222222222222222222), amount: 2000e18});
+
+        bytes memory encoded = wrapper.encode(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            locks,
+            ALLOCATOR_SIG,
+            SPONSOR_SIG,
+            CLAIMANT,
+            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+        );
+
+        BatchClaim memory decoded = wrapper.decode(encoded);
+
+        assertBatchClaimEqual(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            CLAIMANT,
+            ALLOCATOR_SIG,
+            SPONSOR_SIG,
+            locks,
+            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT,
+            decoded
+        );
+    }
+
+    /// @notice Test round trip with locks containing max values for individual fields
+    function test_roundTrip_lockWithMaxValues() public view {
+        Lock[] memory locks = new Lock[](3);
+
+        // Max amount
+        locks[0] = Lock({
+            lockTag: bytes12(uint96(1)),
+            token: address(0x1111111111111111111111111111111111111111),
+            amount: type(uint256).max
+        });
+
+        // Max token address
+        locks[1] = Lock({lockTag: bytes12(uint96(2)), token: address(type(uint160).max), amount: 1000e18});
+
+        // Max lockTag
+        locks[2] = Lock({
+            lockTag: bytes12(type(uint96).max),
+            token: address(0x2222222222222222222222222222222222222222),
+            amount: 2000e18
+        });
+
+        bytes memory encoded = wrapper.encode(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            locks,
+            ALLOCATOR_SIG,
+            SPONSOR_SIG,
+            CLAIMANT,
+            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+        );
+
+        BatchClaim memory decoded = wrapper.decode(encoded);
+
+        assertBatchClaimEqual(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            CLAIMANT,
+            ALLOCATOR_SIG,
+            SPONSOR_SIG,
+            locks,
+            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT,
+            decoded
+        );
+    }
+
+    /// @notice Test round trip with a single lock where all fields are zero
+    function test_roundTrip_lockAllZeros() public view {
+        Lock[] memory locks = new Lock[](1);
+        locks[0] = Lock({lockTag: bytes12(0), token: address(0), amount: 0});
+
+        bytes memory encoded = wrapper.encode(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+        );
+
+        BatchClaim memory decoded = wrapper.decode(encoded);
+
+        assertBatchClaimEqual(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            CLAIMANT,
+            hex"",
+            hex"",
+            locks,
+            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT,
+            decoded
+        );
+    }
+
+    /// @notice Test round trip with a single lock where all fields are max values
+    function test_roundTrip_lockAllMaxValues() public view {
+        Lock[] memory locks = new Lock[](1);
+        locks[0] =
+            Lock({lockTag: bytes12(type(uint96).max), token: address(type(uint160).max), amount: type(uint256).max});
+
+        bytes memory encoded = wrapper.encode(
+            SPONSOR, NONCE, EXPIRES, WITNESS, locks, hex"", hex"", CLAIMANT, CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT
+        );
+
+        BatchClaim memory decoded = wrapper.decode(encoded);
+
+        assertBatchClaimEqual(
+            SPONSOR,
+            NONCE,
+            EXPIRES,
+            WITNESS,
+            CLAIMANT,
+            hex"",
+            hex"",
+            locks,
+            CLAIM_REDUCTION_SCALING_FACTOR_CONSTANT,
+            decoded
+        );
+    }
 }
