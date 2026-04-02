@@ -19,24 +19,24 @@ jobs:
     name: Foundry project
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
           persist-credentials: false
 
       
       - name: Set Node.js 21.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3
         with:
           node-version: 21.x
   
       - name: Run install
-        uses: borales/actions-yarn@v4
+        uses: borales/actions-yarn@31e8b9ba96946b034c571eb19c7cba0d668dc97e # v4
         with:
           cmd: install # will run `yarn install` command
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1
         with:
           version: nightly
 
