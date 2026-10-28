@@ -28,7 +28,7 @@ jobs:
       - name: Set Node.js 21.x
         uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3
         with:
-          node-version: 21.x
+          node-version: 22.23.4
   
       - name: Run install
         uses: borales/actions-yarn@31e8b9ba96946b034c571eb19c7cba0d668dc97e # v4
@@ -36,9 +36,9 @@ jobs:
           cmd: install # will run `yarn install` command
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
         with:
-          version: nightly
+          version: v1.0.0
 
       - name: Show Forge version
         run: |
