@@ -36,7 +36,7 @@ jobs:
           cmd: install # will run `yarn install` command
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@8789b3e21e6c11b2697f5eb56eddae542f746c10 # v1
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
         with:
           version: nightly
 
