@@ -7,3 +7,6 @@
 [submodule "lib/tribunal"]
 	path = lib/tribunal
 	url = https://github.com/uniswap/tribunal
+[submodule "lib/wormhole-solidity-sdk"]
+	path = lib/wormhole-solidity-sdk
+	url = https://github.com/wormhole-foundation/wormhole-solidity-sdk

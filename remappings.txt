@@ -9,6 +9,7 @@ solmate/=lib/the-compact/lib/permit2/lib/solmate/
 the-compact/=lib/the-compact/
 tribunal/=lib/tribunal/src/
 tstorish/=lib/the-compact/lib/tstorish/src/
+wormhole-solidity-sdk/=lib/wormhole-solidity-sdk/src/
 hyperlane/=node_modules/@hyperlane-xyz/core
 @openzeppelin/contracts/=node_modules/@openzeppelin/contracts
 @openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable
